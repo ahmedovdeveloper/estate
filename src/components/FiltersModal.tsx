@@ -29,9 +29,6 @@ export const FiltersModal: React.FC<FiltersModalProps> = ({
         <div className="p-4 sm:p-5 border-b border-stone-200 bg-white flex items-center justify-between">
           <div className="flex items-center gap-2">
             <h3 className="font-bold text-lg text-stone-900">Фильтры поиска</h3>
-            <span className="text-xs bg-amber-50 text-amber-900 border border-amber-200 px-2 py-0.5 rounded-full font-bold">
-              {totalResults} вариантов
-            </span>
           </div>
 
           <div className="flex items-center gap-2">
@@ -159,34 +156,6 @@ export const FiltersModal: React.FC<FiltersModalProps> = ({
             </div>
           </div>
 
-          {/* Sort By */}
-          <div className="space-y-2">
-            <label className="text-xs font-bold text-stone-700 uppercase tracking-wider block">
-              Сортировка
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              {[
-                { id: 'featured', label: '🌟 Рекомендуемые' },
-                { id: 'rating', label: '⭐ По рейтингу' },
-                { id: 'price_asc', label: '💵 Сначала дешевле' },
-                { id: 'price_desc', label: '💎 Сначала дороже' },
-                { id: 'newest', label: '🆕 Свежие объявления' }
-              ].map((item) => (
-                <button
-                  key={item.id}
-                  onClick={() => onUpdateFilters({ sortBy: item.id as any })}
-                  className={`p-2.5 rounded-xl text-xs font-semibold text-left transition-all cursor-pointer ${
-                    filters.sortBy === item.id
-                      ? 'bg-stone-900 text-white'
-                      : 'bg-white text-stone-700 border border-stone-200 hover:bg-stone-100'
-                  }`}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
         </div>
 
         {/* Footer Apply */}
@@ -195,7 +164,7 @@ export const FiltersModal: React.FC<FiltersModalProps> = ({
             onClick={onClose}
             className="w-full py-3.5 bg-stone-900 text-white font-bold text-sm rounded-2xl hover:bg-stone-800 shadow-md transition-all active:scale-98 cursor-pointer"
           >
-            Показать {totalResults} предложений
+            Применить фильтры
           </button>
         </div>
 

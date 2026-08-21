@@ -75,36 +75,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }
   };
 
-  const handleQuickFillAdmin = (autoSubmit = false) => {
-    setLoginUsername('admin');
-    setLoginPassword('admin');
-    setTab('login');
-    setError(null);
-    if (autoSubmit) {
-      handleDirectLogin('admin', 'admin');
-    }
-  };
-
-  const handleQuickFillOwner = (autoSubmit = false) => {
-    setLoginUsername('sardor_realty');
-    setLoginPassword('123');
-    setTab('login');
-    setError(null);
-    if (autoSubmit) {
-      handleDirectLogin('sardor_realty', '123');
-    }
-  };
-
-  const handleQuickFillSeeker = (autoSubmit = false) => {
-    setLoginUsername('timur_invest');
-    setLoginPassword('123');
-    setTab('login');
-    setError(null);
-    if (autoSubmit) {
-      handleDirectLogin('timur_invest', '123');
-    }
-  };
-
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     await handleDirectLogin(loginUsername, loginPassword);
@@ -244,84 +214,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 {loading ? 'Вход в систему...' : 'Войти в аккаунт'}
                 <ArrowRight className="w-4 h-4" />
               </button>
-
-              {/* Quick Demo Test Accounts */}
-              <div className="pt-3 border-t border-stone-100">
-                <p className="text-[11px] font-semibold text-stone-500 uppercase tracking-wider mb-2">
-                  Быстрый вход для тестирования:
-                </p>
-                <div className="space-y-1.5">
-                  <div className="flex items-center gap-1.5 w-full">
-                    <button
-                      type="button"
-                      id="quick-admin-login"
-                      onClick={() => handleQuickFillAdmin(false)}
-                      className="flex-1 p-2 bg-amber-50 hover:bg-amber-100/80 border border-amber-200 rounded-lg text-left text-xs text-amber-900 font-medium flex items-center justify-between transition-colors cursor-pointer"
-                    >
-                      <span className="flex items-center gap-2">
-                        <ShieldCheck className="w-4 h-4 text-amber-700" />
-                        <span><strong>Администратор</strong> (admin / admin)</span>
-                      </span>
-                      <span className="text-[10px] bg-amber-200/80 text-amber-900 px-1.5 py-0.5 rounded font-mono">Заполнить</span>
-                    </button>
-                    <button
-                      type="button"
-                      id="quick-admin-direct-login"
-                      onClick={() => handleQuickFillAdmin(true)}
-                      className="px-2.5 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer shadow-xs whitespace-nowrap"
-                      title="Войти сразу как администратор"
-                    >
-                      Войти сразу →
-                    </button>
-                  </div>
-
-                  <div className="flex items-center gap-1.5 w-full">
-                    <button
-                      type="button"
-                      id="quick-owner-login"
-                      onClick={() => handleQuickFillOwner(false)}
-                      className="flex-1 p-2 bg-stone-100 hover:bg-stone-200/80 border border-stone-200 rounded-lg text-left text-xs text-stone-800 font-medium flex items-center justify-between transition-colors cursor-pointer"
-                    >
-                      <span className="flex items-center gap-2">
-                        <Building className="w-4 h-4 text-stone-600" />
-                        <span><strong>Риелтор / Собственник</strong> (sardor_realty)</span>
-                      </span>
-                      <span className="text-[10px] bg-stone-200 text-stone-700 px-1.5 py-0.5 rounded font-mono">Заполнить</span>
-                    </button>
-                    <button
-                      type="button"
-                      id="quick-owner-direct-login"
-                      onClick={() => handleQuickFillOwner(true)}
-                      className="px-2.5 py-2 bg-stone-800 hover:bg-stone-700 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer shadow-xs whitespace-nowrap"
-                    >
-                      Войти →
-                    </button>
-                  </div>
-
-                  <div className="flex items-center gap-1.5 w-full">
-                    <button
-                      type="button"
-                      id="quick-seeker-login"
-                      onClick={() => handleQuickFillSeeker(false)}
-                      className="flex-1 p-2 bg-stone-100 hover:bg-stone-200/80 border border-stone-200 rounded-lg text-left text-xs text-stone-800 font-medium flex items-center justify-between transition-colors cursor-pointer"
-                    >
-                      <span className="flex items-center gap-2">
-                        <Search className="w-4 h-4 text-stone-600" />
-                        <span><strong>Ищущий жилье</strong> (timur_invest)</span>
-                      </span>
-                      <span className="text-[10px] bg-stone-200 text-stone-700 px-1.5 py-0.5 rounded font-mono">Заполнить</span>
-                    </button>
-                    <button
-                      type="button"
-                      id="quick-seeker-direct-login"
-                      onClick={() => handleQuickFillSeeker(true)}
-                      className="px-2.5 py-2 bg-stone-800 hover:bg-stone-700 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer shadow-xs whitespace-nowrap"
-                    >
-                      Войти →
-                    </button>
-                  </div>
-                </div>
-              </div>
             </form>
           )}
 

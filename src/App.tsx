@@ -26,12 +26,12 @@ import {
   User as UserIcon,
   ChevronDown
 } from 'lucide-react';
-import { Property, FilterState, PropertyType, DealType, User } from './types';
+import { Property, FilterState, PropertyType, DealType, User, Review } from './types';
 import { INITIAL_PROPERTIES } from './data/mockProperties';
 import { MOCK_USERS } from './data/mockUsers';
 import { PropertyCard } from './components/PropertyCard';
 import { PropertyNearbyCard } from './components/PropertyNearbyCard';
-import { PropertyDetailModal } from './components/PropertyDetailModal';
+import { PropertyDetailPage } from './components/PropertyDetailPage';
 import { InteractiveMap } from './components/InteractiveMap';
 import { AddPropertyModal } from './components/AddPropertyModal';
 import { AIAssistantModal } from './components/AIAssistantModal';
@@ -39,7 +39,7 @@ import { FiltersModal } from './components/FiltersModal';
 import { BookingModal } from './components/BookingModal';
 import { ContactAgentModal } from './components/ContactAgentModal';
 import { NotificationsModal } from './components/NotificationsModal';
-import { ProfileModal } from './components/ProfileModal';
+import { ProfilePage } from './components/ProfilePage';
 import { AuthModal } from './components/AuthModal';
 import { AdminDashboard } from './components/AdminDashboard';
 import { BottomNav, NavTab } from './components/BottomNav';
@@ -78,7 +78,6 @@ export default function App() {
   const [showAIModal, setShowAIModal] = useState(false);
   const [showFiltersModal, setShowFiltersModal] = useState(false);
   const [showNotificationsModal, setShowNotificationsModal] = useState(false);
-  const [showProfileModal, setShowProfileModal] = useState(false);
 
   // Filters State
   const [filters, setFilters] = useState<FilterState>({
@@ -274,8 +273,45 @@ export default function App() {
     showToast('Объявление удалено');
   };
 
+  // Add Review to Property
+  const handleAddReview = (propertyId: string, reviewData: Partial<Review>) => {
+    const newRev: Review = {
+      id: `rev-${Date.now()}`,
+      userName: reviewData.userName || 'Гость',
+      userRole: reviewData.userRole || 'Пользователь',
+      rating: reviewData.rating || 5,
+      comment: reviewData.comment || '',
+      date: 'Только что',
+      avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80'
+    };
+
+    setProperties((prev) =>
+      prev.map((p) => {
+        if (p.id === propertyId) {
+          const updatedReviews = [newRev, ...p.reviews];
+          const newRating = Number(
+            (updatedReviews.reduce((sum, r) => sum + r.rating, 0) / updatedReviews.length).toFixed(1)
+          );
+          const updatedProp = {
+            ...p,
+            reviews: updatedReviews,
+            reviewsCount: updatedReviews.length,
+            rating: newRating
+          };
+          if (selectedProperty?.id === propertyId) {
+            setSelectedProperty(updatedProp);
+          }
+          return updatedProp;
+        }
+        return p;
+      })
+    );
+    showToast('Спасибо за ваш отзыв! Он опубликован ⭐');
+  };
+
   // Handle Tab Switch
   const handleTabChange = (tab: NavTab) => {
+    setSelectedProperty(null); // Return from detail page to main tabs
     if (tab === 'assistant') {
       setShowAIModal(true);
       return;
@@ -286,14 +322,6 @@ export default function App() {
       } else {
         setEditProperty(null);
         setShowAddModal(true);
-      }
-      return;
-    }
-    if (tab === 'profile') {
-      if (currentUser) {
-        setShowProfileModal(true);
-      } else {
-        setShowAuthModal(true);
       }
       return;
     }
@@ -356,38 +384,57 @@ export default function App() {
         activeTab === 'map' ? 'h-[100dvh] overflow-hidden' : 'min-h-screen'
       }`}>
         
-        {/* TAB CONTENT: HOME (Responsive Full Width Container) */}
-        {activeTab === 'home' && (
+        {/* MAIN BODY: DETAIL PAGE OR TAB VIEWS */}
+        {selectedProperty ? (
+          <PropertyDetailPage
+            property={selectedProperty}
+            onBack={() => setSelectedProperty(null)}
+            isFavorite={favorites.includes(selectedProperty.id)}
+            onToggleFavorite={() => toggleFavorite(selectedProperty.id)}
+            onBookNow={(p) => setBookingProperty(p)}
+            onContactAgent={(p) => setContactProperty(p)}
+            onOpenMap={(p) => {
+              setSelectedProperty(null);
+              setActiveTab('map');
+            }}
+            onAddReview={handleAddReview}
+          />
+        ) : (
+          <>
+            {/* TAB CONTENT: HOME (Responsive Full Width Container) */}
+            {activeTab === 'home' && (
           <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-5 sm:py-7 space-y-7">
             
             {/* Search Bar & City & Deal Filters & Filter Trigger Card */}
-            <div className="bg-white rounded-3xl p-4 sm:p-5 border border-stone-200/90 shadow-sm space-y-4">
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+            <div className="bg-white rounded-2xl sm:rounded-3xl p-3 sm:p-5 border border-stone-200/90 shadow-sm space-y-3" id="home-search-filter-card">
+              
+              {/* Primary Search & Filter Bar */}
+              <div className="flex items-center gap-2 sm:gap-3">
                 
-                {/* City Selector */}
-                <div className="flex items-center gap-1.5 bg-stone-100 px-3 py-2.5 rounded-2xl border border-stone-200/80 shrink-0">
-                  <MapPin className="w-4 h-4 text-stone-700 shrink-0" />
+                {/* City Selector Pill */}
+                <div className="flex items-center gap-1 sm:gap-1.5 bg-stone-100 px-2.5 sm:px-3 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl border border-stone-200/80 shrink-0">
+                  <MapPin className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-stone-700 shrink-0" />
                   <select
                     id="home-city-select"
                     value={filters.city}
                     onChange={(e) => setFilters((prev) => ({ ...prev, city: e.target.value }))}
-                    className="font-bold text-stone-900 text-xs sm:text-sm bg-transparent border-none focus:outline-none cursor-pointer pr-1"
+                    className="font-bold text-stone-900 text-xs sm:text-sm bg-transparent border-none focus:outline-none cursor-pointer pr-1 max-w-[95px] sm:max-w-none truncate"
                   >
-                    <option value="all">Весь Узбекистан</option>
+                    <option value="all">Узбекистан</option>
                     <option value="Ташкент">Ташкент</option>
                     <option value="Самарканд">Самарканд</option>
                     <option value="Бухара">Бухара</option>
                   </select>
-                  <ChevronDown className="w-3.5 h-3.5 text-stone-500 pointer-events-none -ml-1" />
+                  <ChevronDown className="w-3 h-3 text-stone-500 pointer-events-none -ml-1 shrink-0" />
                 </div>
 
                 {/* Search input */}
-                <div className="flex-1 flex items-center bg-stone-50 rounded-2xl px-4 py-2.5 border border-stone-200/80 focus-within:border-stone-400 focus-within:bg-white transition-all shadow-2xs">
-                  <Search className="w-4 h-4 text-stone-400 mr-3 shrink-0" />
+                <div className="flex-1 flex items-center bg-stone-50 rounded-xl sm:rounded-2xl px-3 sm:px-4 py-2 sm:py-2.5 border border-stone-200/80 focus-within:border-stone-400 focus-within:bg-white transition-all shadow-2xs">
+                  <Search className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-stone-400 mr-2 sm:mr-3 shrink-0" />
                   <input
                     type="text"
                     id="search-input"
-                    placeholder="Поиск по адресу, району, городу или названию..."
+                    placeholder="Поиск по адресу, району или ЖК..."
                     value={filters.searchQuery}
                     onChange={(e) => setFilters((prev) => ({ ...prev, searchQuery: e.target.value }))}
                     className="w-full text-xs sm:text-sm bg-transparent border-none focus:outline-none placeholder:text-stone-400 font-medium text-stone-900"
@@ -402,8 +449,8 @@ export default function App() {
                   )}
                 </div>
 
-                {/* Deal Type Switch (Rent / Sale / All) */}
-                <div className="flex bg-stone-100 p-1 rounded-2xl text-xs font-bold text-stone-700 shrink-0">
+                {/* Deal Type Switch (Desktop only inline, on mobile it's in the quick ribbon below) */}
+                <div className="hidden md:flex bg-stone-100 p-1 rounded-2xl text-xs font-bold text-stone-700 shrink-0">
                   <button
                     onClick={() => setFilters((prev) => ({ ...prev, dealType: 'all' }))}
                     className={`px-3 py-2 rounded-xl text-center transition-all cursor-pointer ${
@@ -434,21 +481,53 @@ export default function App() {
                 <button
                   id="open-filters-btn"
                   onClick={() => setShowFiltersModal(true)}
-                  className="px-4 py-2.5 rounded-2xl bg-stone-900 hover:bg-stone-800 text-white flex items-center justify-center gap-2 shadow-sm shrink-0 transition-colors cursor-pointer text-xs font-bold"
+                  className="px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl bg-stone-900 hover:bg-stone-800 text-white flex items-center justify-center gap-1.5 sm:gap-2 shadow-sm shrink-0 transition-colors cursor-pointer text-xs font-bold"
                   title="Расширенные фильтры"
                 >
-                  <SlidersHorizontal className="w-4 h-4" />
-                  <span>Фильтры</span>
+                  <SlidersHorizontal className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                  <span className="hidden sm:inline">Фильтры</span>
                   {activeFiltersCount > 0 && (
-                    <span className="bg-amber-500 text-stone-950 text-[10px] font-black w-4 h-4 rounded-full flex items-center justify-center">
+                    <span className="bg-amber-400 text-stone-950 text-[10px] font-black w-4 h-4 rounded-full flex items-center justify-center -mr-0.5">
                       {activeFiltersCount}
                     </span>
                   )}
                 </button>
               </div>
 
-              {/* Quick Category Tabs */}
-              <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none pt-1">
+              {/* Quick Filter Ribbon (Deal Types + Categories in a smooth horizontal scroll) */}
+              <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto pb-1 scrollbar-none pt-0.5">
+                
+                {/* Mobile Deal Type Toggle Chips */}
+                <div className="flex md:hidden items-center gap-1 bg-stone-100 p-0.5 rounded-xl border border-stone-200/80 shrink-0">
+                  <button
+                    onClick={() => setFilters((prev) => ({ ...prev, dealType: 'all' }))}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      filters.dealType === 'all' ? 'bg-white text-stone-900 shadow-2xs' : 'text-stone-500'
+                    }`}
+                  >
+                    Все
+                  </button>
+                  <button
+                    onClick={() => setFilters((prev) => ({ ...prev, dealType: 'rent' }))}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      filters.dealType === 'rent' ? 'bg-stone-900 text-white shadow-2xs' : 'text-stone-500'
+                    }`}
+                  >
+                    Аренда
+                  </button>
+                  <button
+                    onClick={() => setFilters((prev) => ({ ...prev, dealType: 'sale' }))}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      filters.dealType === 'sale' ? 'bg-emerald-800 text-white shadow-2xs' : 'text-stone-500'
+                    }`}
+                  >
+                    Продажа
+                  </button>
+                </div>
+
+                <div className="h-4 w-px bg-stone-200 md:hidden shrink-0 mx-0.5" />
+
+                {/* Category Tabs */}
                 {categoryTabs.map((tab) => {
                   const active = filters.propertyType === tab.id || (tab.id === 'all' && filters.propertyType === 'all');
                   return (
@@ -456,7 +535,7 @@ export default function App() {
                       key={tab.id}
                       id={`cat-pill-${tab.id}`}
                       onClick={() => setFilters((prev) => ({ ...prev, propertyType: tab.id as any }))}
-                      className={`px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer shrink-0 ${
                         active
                           ? 'bg-stone-900 text-white shadow-xs'
                           : 'bg-stone-100 text-stone-600 hover:bg-stone-200/80 border border-stone-200/80'
@@ -467,6 +546,66 @@ export default function App() {
                   );
                 })}
               </div>
+
+              {/* Active Filters Summary Chips (if non-default filters active) */}
+              {activeFiltersCount > 0 && (
+                <div className="flex items-center gap-1.5 overflow-x-auto pt-1 pb-0.5 scrollbar-none text-xs border-t border-stone-100">
+                  <span className="text-[10px] sm:text-[11px] font-bold text-stone-400 uppercase tracking-wider shrink-0 mr-1">
+                    Активные:
+                  </span>
+                  {filters.city !== 'all' && (
+                    <button
+                      onClick={() => setFilters((prev) => ({ ...prev, city: 'all' }))}
+                      className="bg-amber-100/90 hover:bg-amber-200 text-amber-950 font-bold px-2.5 py-0.5 rounded-lg flex items-center gap-1 shrink-0 text-xs transition-colors cursor-pointer"
+                    >
+                      <span>{filters.city}</span>
+                      <span className="text-[10px]">✕</span>
+                    </button>
+                  )}
+                  {filters.dealType !== 'all' && (
+                    <button
+                      onClick={() => setFilters((prev) => ({ ...prev, dealType: 'all' }))}
+                      className="bg-amber-100/90 hover:bg-amber-200 text-amber-950 font-bold px-2.5 py-0.5 rounded-lg flex items-center gap-1 shrink-0 text-xs transition-colors cursor-pointer"
+                    >
+                      <span>{filters.dealType === 'rent' ? 'Аренда' : 'Продажа'}</span>
+                      <span className="text-[10px]">✕</span>
+                    </button>
+                  )}
+                  {filters.propertyType !== 'all' && (
+                    <button
+                      onClick={() => setFilters((prev) => ({ ...prev, propertyType: 'all' }))}
+                      className="bg-amber-100/90 hover:bg-amber-200 text-amber-950 font-bold px-2.5 py-0.5 rounded-lg flex items-center gap-1 shrink-0 text-xs transition-colors cursor-pointer"
+                    >
+                      <span>{categoryTabs.find(t => t.id === filters.propertyType)?.label || filters.propertyType}</span>
+                      <span className="text-[10px]">✕</span>
+                    </button>
+                  )}
+                  {(filters.minPrice > 0 || filters.maxPrice < 500000) && (
+                    <button
+                      onClick={() => setFilters((prev) => ({ ...prev, minPrice: 0, maxPrice: 500000 }))}
+                      className="bg-amber-100/90 hover:bg-amber-200 text-amber-950 font-bold px-2.5 py-0.5 rounded-lg flex items-center gap-1 shrink-0 text-xs transition-colors cursor-pointer"
+                    >
+                      <span>${filters.minPrice.toLocaleString()} - ${filters.maxPrice.toLocaleString()}</span>
+                      <span className="text-[10px]">✕</span>
+                    </button>
+                  )}
+                  {filters.bedrooms !== 'all' && (
+                    <button
+                      onClick={() => setFilters((prev) => ({ ...prev, bedrooms: 'all' }))}
+                      className="bg-amber-100/90 hover:bg-amber-200 text-amber-950 font-bold px-2.5 py-0.5 rounded-lg flex items-center gap-1 shrink-0 text-xs transition-colors cursor-pointer"
+                    >
+                      <span>{filters.bedrooms} комн.</span>
+                      <span className="text-[10px]">✕</span>
+                    </button>
+                  )}
+                  <button
+                    onClick={handleResetFilters}
+                    className="text-stone-500 hover:text-stone-900 font-bold text-[11px] underline ml-1 shrink-0 cursor-pointer"
+                  >
+                    Сбросить все
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Section: Featured Properties */}
@@ -647,15 +786,29 @@ export default function App() {
                     )}
                   </button>
 
-                  {/* AI Quick Button */}
-                  <button
-                    onClick={() => setShowAIModal(true)}
-                    className="h-11 px-3.5 bg-amber-500 hover:bg-amber-600 text-stone-950 rounded-2xl flex items-center gap-1.5 shadow-xl shrink-0 transition-all active:scale-95 cursor-pointer font-bold text-xs"
-                    title="AI Консультант"
-                  >
-                    <Sparkles className="w-4 h-4" />
-                    <span className="hidden md:inline">AI Подбор</span>
-                  </button>
+                  {/* Action Quick Button (Add Property for Realtors, AI Assistant for Seekers) */}
+                  {currentUser?.role === 'owner' || currentUser?.role === 'admin' ? (
+                    <button
+                      onClick={() => {
+                        setEditProperty(null);
+                        setShowAddModal(true);
+                      }}
+                      className="h-11 px-3.5 bg-amber-500 hover:bg-amber-400 text-stone-950 rounded-2xl flex items-center gap-1.5 shadow-xl shrink-0 transition-all active:scale-95 cursor-pointer font-bold text-xs"
+                      title="Добавить объявление"
+                    >
+                      <Plus className="w-4 h-4" />
+                      <span className="hidden md:inline">Подать объявление</span>
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => setShowAIModal(true)}
+                      className="h-11 px-3.5 bg-amber-500 hover:bg-amber-600 text-stone-950 rounded-2xl flex items-center gap-1.5 shadow-xl shrink-0 transition-all active:scale-95 cursor-pointer font-bold text-xs"
+                      title="AI Консультант"
+                    >
+                      <Sparkles className="w-4 h-4" />
+                      <span className="hidden md:inline">AI Подбор</span>
+                    </button>
+                  )}
                 </div>
 
                 {/* City Quick Pills & Deal Type Filter */}
@@ -845,46 +998,56 @@ export default function App() {
           </main>
         )}
 
-        {/* Floating Bottom Navigation Bar */}
-        <BottomNav
-          activeTab={activeTab}
-          onTabChange={handleTabChange}
-          favoritesCount={favorites.length}
-          currentUser={currentUser}
-          onProfileClick={() => {
-            if (currentUser) {
-              setShowProfileModal(true);
-            } else {
-              setShowAuthModal(true);
-            }
-          }}
-        />
+        {/* TAB CONTENT: FULL PROFILE PAGE */}
+        {activeTab === 'profile' && (
+          <ProfilePage
+            currentUser={currentUser}
+            onLoginSuccess={handleLoginSuccess}
+            onLogout={handleLogout}
+            onOpenAddProperty={() => {
+              setEditProperty(null);
+              setShowAddModal(true);
+            }}
+            onOpenAIAssistant={() => setShowAIModal(true)}
+            onOpenAdmin={() => setShowAdminModal(true)}
+            onOpenFavorites={() => setActiveTab('favorites')}
+            favoritesCount={favorites.length}
+            userProperties={userProperties}
+            onSelectProperty={(property) => setSelectedProperty(property)}
+            onDeleteProperty={handleDeleteProperty}
+            onNavigateHome={() => setActiveTab('home')}
+          />
+        )}
+          </>
+        )}
+
+        {/* Floating Bottom Navigation Bar (Hidden when on Property Detail page or shown cleanly) */}
+        {!selectedProperty && (
+          <BottomNav
+            activeTab={activeTab}
+            onTabChange={handleTabChange}
+            favoritesCount={favorites.length}
+            currentUser={currentUser}
+            onProfileClick={() => {
+              setSelectedProperty(null);
+              setActiveTab('profile');
+            }}
+            onQuickAction={() => {
+              if (currentUser?.role === 'owner' || currentUser?.role === 'admin') {
+                setEditProperty(null);
+                setShowAddModal(true);
+              } else {
+                setShowFiltersModal(true);
+              }
+            }}
+          />
+        )}
 
       </div>
 
       {/* ALL MODALS & DIALOGS */}
 
-      {/* 1. Property Details Modal */}
-      {selectedProperty && (
-        <PropertyDetailModal
-          property={selectedProperty}
-          onClose={() => setSelectedProperty(null)}
-          isFavorite={favorites.includes(selectedProperty.id)}
-          onToggleFavorite={() => toggleFavorite(selectedProperty.id)}
-          onBookNow={(p) => {
-            setBookingProperty(p);
-          }}
-          onContactAgent={(p) => {
-            setContactProperty(p);
-          }}
-          onOpenMap={(p) => {
-            setSelectedProperty(null);
-            setActiveTab('map');
-          }}
-        />
-      )}
-
-      {/* 2. Contact Agent Modal */}
+      {/* 1. Contact Agent Modal */}
       {contactProperty && (
         <ContactAgentModal
           property={contactProperty}
@@ -974,29 +1137,6 @@ export default function App() {
       <NotificationsModal
         isOpen={showNotificationsModal}
         onClose={() => setShowNotificationsModal(false)}
-      />
-
-      {/* 10. User Profile Modal */}
-      <ProfileModal
-        isOpen={showProfileModal}
-        onClose={() => setShowProfileModal(false)}
-        currentUser={currentUser}
-        onLogout={handleLogout}
-        onOpenAuth={() => setShowAuthModal(true)}
-        onOpenAddProperty={() => {
-          setEditProperty(null);
-          setShowAddModal(true);
-        }}
-        onOpenAIAssistant={() => setShowAIModal(true)}
-        onOpenAdmin={() => setShowAdminModal(true)}
-        onOpenFavorites={() => {
-          setShowProfileModal(false);
-          setActiveTab('favorites');
-        }}
-        favoritesCount={favorites.length}
-        userProperties={userProperties}
-        onSelectProperty={(p) => setSelectedProperty(p)}
-        onDeleteProperty={handleDeleteProperty}
       />
 
     </div>
