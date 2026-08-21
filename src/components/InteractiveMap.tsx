@@ -46,15 +46,31 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
   const markersLayerRef = useRef<L.LayerGroup | null>(null);
   const pickerMarkerRef = useRef<L.Marker | null>(null);
 
+  // Helper to validate lat/lng pair
+  const getSafeLatLng = (c?: [number, number] | number[] | null): [number, number] => {
+    if (!c || !Array.isArray(c) || c.length < 2) {
+      return [41.311081, 69.240562];
+    }
+    const lat = Number(c[0]);
+    const lng = Number(c[1]);
+    if (Number.isFinite(lat) && Number.isFinite(lng)) {
+      return [lat, lng];
+    }
+    return [41.311081, 69.240562];
+  };
+
   // Initialize Map
   useEffect(() => {
     if (!mapContainerRef.current) return;
 
     if (!mapInstanceRef.current) {
+      const safeCenter = getSafeLatLng(center);
+      const safeZoom = Number.isFinite(zoom) ? zoom : 12;
+
       const map = L.map(mapContainerRef.current, {
-        center: [center[0], center[1]] as [number, number],
-        zoom: zoom,
-        zoomControl: false, // We add zoom control explicitly with custom position
+        center: safeCenter,
+        zoom: safeZoom,
+        zoomControl: false,
         attributionControl: false,
         dragging: interactive,
         touchZoom: interactive,
@@ -62,7 +78,6 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
         doubleClickZoom: interactive
       });
 
-      // We use our custom React-based zoom buttons for consistent styling and positioning
       L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
         maxZoom: 19,
         subdomains: 'abcd',
@@ -73,8 +88,12 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
 
       // Handle map clicks in picker mode
       map.on('click', (e: L.LeafletMouseEvent) => {
-        if (pickerMode && onPickLocation) {
-          onPickLocation(e.latlng.lat, e.latlng.lng);
+        if (pickerMode && onPickLocation && e.latlng) {
+          const cLat = Number(e.latlng.lat);
+          const cLng = Number(e.latlng.lng);
+          if (Number.isFinite(cLat) && Number.isFinite(cLng)) {
+            onPickLocation(cLat, cLng);
+          }
         }
       });
     }
@@ -86,10 +105,20 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
 
   // Update map view if center/zoom changes
   useEffect(() => {
-    if (mapInstanceRef.current) {
-      mapInstanceRef.current.setView(center, zoom, { animate: true });
+    if (mapInstanceRef.current && center) {
+      const lat = Number(center[0]);
+      const lng = Number(center[1]);
+      const z = Number(zoom);
+      if (Number.isFinite(lat) && Number.isFinite(lng)) {
+        const safeZ = Number.isFinite(z) ? z : (mapInstanceRef.current.getZoom() || 12);
+        try {
+          mapInstanceRef.current.setView([lat, lng], safeZ, { animate: true });
+        } catch (e) {
+          console.warn('Map setView safe catch:', e);
+        }
+      }
     }
-  }, [center[0], center[1], zoom]);
+  }, [center?.[0], center?.[1], zoom]);
 
   // Handle Resize correctly with ResizeObserver
   useEffect(() => {
@@ -103,7 +132,6 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     
     resizeObserver.observe(mapContainerRef.current);
     
-    // Also trigger immediate multiple timeouts to ensure Leaflet renders tiles properly
     const t1 = setTimeout(() => mapInstanceRef.current?.invalidateSize(), 100);
     const t2 = setTimeout(() => mapInstanceRef.current?.invalidateSize(), 400);
 
@@ -117,11 +145,15 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
   // Pan to selected property
   useEffect(() => {
     if (selectedProperty && mapInstanceRef.current && !pickerMode) {
-      mapInstanceRef.current.flyTo(
-        [selectedProperty.location.lat, selectedProperty.location.lng],
-        14,
-        { duration: 0.8 }
-      );
+      const lat = Number(selectedProperty.location?.lat);
+      const lng = Number(selectedProperty.location?.lng);
+      if (Number.isFinite(lat) && Number.isFinite(lng)) {
+        try {
+          mapInstanceRef.current.flyTo([lat, lng], 14, { duration: 0.8 });
+        } catch (e) {
+          console.warn('Map flyTo safe catch:', e);
+        }
+      }
     }
   }, [selectedProperty]);
 
@@ -134,6 +166,11 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     if (pickerMode) return;
 
     properties.forEach((prop) => {
+      if (!prop || !prop.location) return;
+      const lat = Number(prop.location.lat);
+      const lng = Number(prop.location.lng);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+
       const isSelected = selectedProperty?.id === prop.id;
       const formattedPrice = prop.price >= 100000 
         ? `${Math.round(prop.price / 1000)}k ${prop.currency}`
@@ -163,15 +200,19 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
         iconAnchor: [47, 17]
       });
 
-      const marker = L.marker([prop.location.lat, prop.location.lng], { icon: customIcon });
+      try {
+        const marker = L.marker([lat, lng], { icon: customIcon });
 
-      marker.on('click', () => {
-        if (onSelectProperty) {
-          onSelectProperty(prop);
-        }
-      });
+        marker.on('click', () => {
+          if (onSelectProperty) {
+            onSelectProperty(prop);
+          }
+        });
 
-      markersLayerRef.current?.addLayer(marker);
+        markersLayerRef.current?.addLayer(marker);
+      } catch (e) {
+        console.warn('Marker create safe catch:', e);
+      }
     });
   }, [properties, selectedProperty, pickerMode]);
 
@@ -185,35 +226,47 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     }
 
     if (pickerMode && pickedLocation) {
-      const pickerIcon = L.divIcon({
-        className: 'custom-picker-marker',
-        html: `
-          <div class="relative flex items-center justify-center">
-            <div class="w-9 h-9 rounded-full bg-amber-600 text-white shadow-2xl flex items-center justify-center text-sm font-bold animate-bounce border-2 border-white ring-4 ring-amber-500/30">
-              📍
+      const pickLat = Number(pickedLocation.lat);
+      const pickLng = Number(pickedLocation.lng);
+      if (Number.isFinite(pickLat) && Number.isFinite(pickLng)) {
+        const pickerIcon = L.divIcon({
+          className: 'custom-picker-marker',
+          html: `
+            <div class="relative flex items-center justify-center">
+              <div class="w-9 h-9 rounded-full bg-amber-600 text-white shadow-2xl flex items-center justify-center text-sm font-bold animate-bounce border-2 border-white ring-4 ring-amber-500/30">
+                📍
+              </div>
+              <div class="absolute -bottom-1 w-4 h-1.5 bg-black/40 rounded-full blur-[1px]"></div>
             </div>
-            <div class="absolute -bottom-1 w-4 h-1.5 bg-black/40 rounded-full blur-[1px]"></div>
-          </div>
-        `,
-        iconSize: [36, 36],
-        iconAnchor: [18, 36]
-      });
+          `,
+          iconSize: [36, 36],
+          iconAnchor: [18, 36]
+        });
 
-      const marker = L.marker([pickedLocation.lat, pickedLocation.lng], {
-        icon: pickerIcon,
-        draggable: true
-      });
+        try {
+          const marker = L.marker([pickLat, pickLng], {
+            icon: pickerIcon,
+            draggable: true
+          });
 
-      marker.on('dragend', (e: any) => {
-        const newPos = e.target.getLatLng();
-        if (onPickLocation) {
-          onPickLocation(newPos.lat, newPos.lng);
+          marker.on('dragend', (e: any) => {
+            const newPos = e.target.getLatLng();
+            if (onPickLocation && newPos) {
+              const nLat = Number(newPos.lat);
+              const nLng = Number(newPos.lng);
+              if (Number.isFinite(nLat) && Number.isFinite(nLng)) {
+                onPickLocation(nLat, nLng);
+              }
+            }
+          });
+
+          marker.addTo(mapInstanceRef.current);
+          pickerMarkerRef.current = marker;
+          mapInstanceRef.current.panTo([pickLat, pickLng]);
+        } catch (e) {
+          console.warn('Picker marker safe catch:', e);
         }
-      });
-
-      marker.addTo(mapInstanceRef.current);
-      pickerMarkerRef.current = marker;
-      mapInstanceRef.current.panTo([pickedLocation.lat, pickedLocation.lng]);
+      }
     }
   }, [pickerMode, pickedLocation]);
 
@@ -221,14 +274,30 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
   useEffect(() => {
     if (!mapInstanceRef.current || !activeCity) return;
     const cityData = UZBEKISTAN_CITIES.find((c) => c.id === activeCity || c.name === activeCity);
-    if (cityData) {
-      mapInstanceRef.current.flyTo(cityData.coords, cityData.zoom, { duration: 1.2 });
+    if (cityData && Array.isArray(cityData.coords)) {
+      const cLat = Number(cityData.coords[0]);
+      const cLng = Number(cityData.coords[1]);
+      if (Number.isFinite(cLat) && Number.isFinite(cLng)) {
+        try {
+          mapInstanceRef.current.flyTo([cLat, cLng], cityData.zoom || 12, { duration: 1.2 });
+        } catch (e) {
+          console.warn('City flyTo safe catch:', e);
+        }
+      }
     }
   }, [activeCity]);
 
   const handleFlyToCity = (coords: [number, number], targetZoom: number, cityId?: string) => {
-    if (mapInstanceRef.current) {
-      mapInstanceRef.current.flyTo(coords, targetZoom, { duration: 1.2 });
+    if (mapInstanceRef.current && Array.isArray(coords)) {
+      const cLat = Number(coords[0]);
+      const cLng = Number(coords[1]);
+      if (Number.isFinite(cLat) && Number.isFinite(cLng)) {
+        try {
+          mapInstanceRef.current.flyTo([cLat, cLng], targetZoom || 12, { duration: 1.2 });
+        } catch (e) {
+          console.warn('handleFlyToCity safe catch:', e);
+        }
+      }
     }
     if (cityId && onSelectCity) {
       onSelectCity(cityId);
@@ -268,7 +337,9 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
             <MapPin className="w-3.5 h-3.5 text-amber-400" /> Нажмите на карту или перетащите маркер для выбора точного адреса объекта
           </span>
           <span className="font-mono text-[11px] text-amber-300">
-            {pickedLocation ? `${pickedLocation.lat.toFixed(4)}, ${pickedLocation.lng.toFixed(4)}` : 'Точка не выбрана'}
+            {pickedLocation && Number.isFinite(pickedLocation.lat) && Number.isFinite(pickedLocation.lng)
+              ? `${pickedLocation.lat.toFixed(4)}, ${pickedLocation.lng.toFixed(4)}`
+              : 'Точка не выбрана'}
           </span>
         </div>
       )}
