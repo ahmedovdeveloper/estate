@@ -1,0 +1,10 @@
+{
+  "name": "Remix Estate Hub",
+  "description": "Modern real estate platform with interactive map, property search, mobile and web responsive views, and Gemini-powered AI property assistant.",
+  "requestFramePermissions": [
+    "geolocation"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
