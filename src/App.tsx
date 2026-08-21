@@ -289,6 +289,14 @@ export default function App() {
       }
       return;
     }
+    if (tab === 'profile') {
+      if (currentUser) {
+        setShowProfileModal(true);
+      } else {
+        setShowAuthModal(true);
+      }
+      return;
+    }
     setActiveTab(tab);
   };
 
@@ -309,253 +317,232 @@ export default function App() {
     if (filters.city !== 'all') count++;
     if (filters.propertyType !== 'all') count++;
     if (filters.dealType !== 'all') count++;
-    if (filters.priceMin > 0 || filters.priceMax < 1000000) count++;
-    if (filters.bedrooms > 0) count++;
+    if (filters.minPrice > 0 || filters.maxPrice < 500000) count++;
+    if (filters.bedrooms !== 'all') count++;
     if (filters.searchQuery.trim()) count++;
-    if (filters.verifiedOnly) count++;
     return count;
   }, [filters]);
 
   const handleResetFilters = () => {
     setFilters({
-      city: 'all',
-      propertyType: 'all',
-      dealType: 'all',
-      priceMin: 0,
-      priceMax: 1000000,
-      bedrooms: 0,
       searchQuery: '',
-      verifiedOnly: false,
-      sortBy: 'newest'
+      dealType: 'all',
+      propertyType: 'all',
+      minPrice: 0,
+      maxPrice: 500000,
+      bedrooms: 'all',
+      bathrooms: 'all',
+      city: 'all',
+      sortBy: 'featured'
     });
     showToast('Фильтры сброшены');
   };
 
   return (
-    <div className={`min-h-screen bg-stone-100 text-stone-900 flex justify-center selection:bg-amber-200 selection:text-stone-900 ${
-      activeTab === 'map' ? 'h-[100dvh] overflow-hidden pb-0' : 'pb-24'
+    <div className={`min-h-screen w-full bg-stone-100 text-stone-900 flex flex-col selection:bg-amber-200 selection:text-stone-900 ${
+      activeTab === 'map' ? 'h-[100dvh] overflow-hidden pb-0' : 'pb-24 sm:pb-20'
     }`}>
       
       {/* Toast Notification */}
       {toastMessage && (
-        <div className="fixed top-5 z-70 bg-stone-900 text-white px-4 py-3 rounded-2xl shadow-2xl border border-stone-700 text-xs font-semibold flex items-center gap-2 animate-bounce" id="app-toast">
+        <div className="fixed top-5 left-1/2 -translate-x-1/2 z-70 bg-stone-900 text-white px-4 py-3 rounded-2xl shadow-2xl border border-stone-700 text-xs font-semibold flex items-center gap-2 animate-bounce" id="app-toast">
           <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
           <span>{toastMessage}</span>
         </div>
       )}
 
-      {/* Main Responsive App Container */}
-      <div className={`w-full max-w-lg bg-stone-50 shadow-2xl relative flex flex-col border-x border-stone-200/60 ${
-        activeTab === 'map' ? 'h-[100dvh] overflow-hidden' : 'min-h-screen pb-24'
+      {/* Main Full-Screen App Container without top Header */}
+      <div className={`w-full bg-stone-50 flex-1 flex flex-col ${
+        activeTab === 'map' ? 'h-[100dvh] overflow-hidden' : 'min-h-screen'
       }`}>
         
-        {/* Top Header Bar (Hidden on Map page per user request for full-screen map experience) */}
-        {activeTab !== 'map' && (
-          <header className="sticky top-0 z-30 bg-stone-50/90 backdrop-blur-md px-5 pt-4 pb-3 flex items-center justify-between border-b border-stone-200/60">
-            
-            {/* Location Selector */}
-            <div>
-              <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wider block">
-                Локация
-              </span>
-              <div className="flex items-center gap-1 mt-0.5">
-                <MapPin className="w-4 h-4 text-stone-800 shrink-0" />
-                <select
-                  id="header-city-select"
-                  value={filters.city}
-                  onChange={(e) => setFilters((prev) => ({ ...prev, city: e.target.value }))}
-                  className="font-bold text-stone-900 text-sm bg-transparent border-none focus:outline-none cursor-pointer pr-1"
-                >
-                  <option value="all">Узбекистан (Все)</option>
-                  <option value="Ташкент">Ташкент</option>
-                  <option value="Самарканд">Самарканд</option>
-                  <option value="Бухара">Бухара</option>
-                </select>
-                <ChevronDown className="w-3.5 h-3.5 text-stone-500 pointer-events-none -ml-1" />
-              </div>
-            </div>
-
-            {/* Right Action Icons (Notifications & Profile) */}
-            <div className="flex items-center gap-2.5">
-              {/* Notification Bell */}
-              <button
-                id="notifications-btn"
-                onClick={() => setShowNotificationsModal(true)}
-                className="w-10 h-10 rounded-full bg-white border border-stone-200/80 hover:bg-stone-100 flex items-center justify-center text-stone-700 shadow-xs relative transition-colors cursor-pointer"
-                title="Уведомления"
-              >
-                <Bell className="w-4 h-4" />
-                <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full" />
-              </button>
-
-              {/* Admin Badge Quick Jump (if admin) */}
-              {currentUser?.role === 'admin' && (
-                <button
-                  id="admin-quick-jump-btn"
-                  onClick={() => setShowAdminModal(true)}
-                  className="w-10 h-10 rounded-full bg-amber-100 text-amber-900 border border-amber-300 hover:bg-amber-200 flex items-center justify-center shadow-xs transition-colors cursor-pointer"
-                  title="Панель администратора"
-                >
-                  <ShieldCheck className="w-5 h-5" />
-                </button>
-              )}
-
-              {/* Profile Avatar / Login Button */}
-              {currentUser ? (
-                <button
-                  id="user-profile-btn"
-                  onClick={() => setShowProfileModal(true)}
-                  className="relative cursor-pointer"
-                  title="Профиль"
-                >
-                  <img
-                    src={currentUser.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80'}
-                    alt={currentUser.name}
-                    className="w-10 h-10 rounded-full object-cover border-2 border-stone-900 shadow-xs"
-                  />
-                </button>
-              ) : (
-                <button
-                  id="header-login-btn"
-                  onClick={() => setShowAuthModal(true)}
-                  className="w-10 h-10 rounded-full bg-stone-900 text-white flex items-center justify-center shadow-xs hover:bg-stone-800 cursor-pointer"
-                  title="Войти"
-                >
-                  <UserIcon className="w-4 h-4" />
-                </button>
-              )}
-            </div>
-          </header>
-        )}
-
-        {/* TAB CONTENT: HOME */}
+        {/* TAB CONTENT: HOME (Responsive Full Width Container) */}
         {activeTab === 'home' && (
-          <main className="flex-1 px-5 py-4 space-y-6">
+          <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-5 sm:py-7 space-y-7">
             
-            {/* Search Bar & Filter Button */}
-            <div className="flex items-center gap-2.5">
-              <div className="flex-1 flex items-center bg-white rounded-2xl px-3.5 py-3 border border-stone-200 shadow-xs">
-                <Search className="w-4 h-4 text-stone-400 mr-2.5 shrink-0" />
-                <input
-                  type="text"
-                  id="search-input"
-                  placeholder="Поиск по адресу, району или названию..."
-                  value={filters.searchQuery}
-                  onChange={(e) => setFilters((prev) => ({ ...prev, searchQuery: e.target.value }))}
-                  className="w-full text-xs bg-transparent border-none focus:outline-none placeholder:text-stone-400 font-medium"
-                />
-                {filters.searchQuery && (
-                  <button
-                    onClick={() => setFilters((prev) => ({ ...prev, searchQuery: '' }))}
-                    className="text-stone-400 hover:text-stone-600 text-xs px-1"
+            {/* Search Bar & City & Deal Filters & Filter Trigger Card */}
+            <div className="bg-white rounded-3xl p-4 sm:p-5 border border-stone-200/90 shadow-sm space-y-4">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                
+                {/* City Selector */}
+                <div className="flex items-center gap-1.5 bg-stone-100 px-3 py-2.5 rounded-2xl border border-stone-200/80 shrink-0">
+                  <MapPin className="w-4 h-4 text-stone-700 shrink-0" />
+                  <select
+                    id="home-city-select"
+                    value={filters.city}
+                    onChange={(e) => setFilters((prev) => ({ ...prev, city: e.target.value }))}
+                    className="font-bold text-stone-900 text-xs sm:text-sm bg-transparent border-none focus:outline-none cursor-pointer pr-1"
                   >
-                    ✕
-                  </button>
-                )}
-              </div>
+                    <option value="all">Весь Узбекистан</option>
+                    <option value="Ташкент">Ташкент</option>
+                    <option value="Самарканд">Самарканд</option>
+                    <option value="Бухара">Бухара</option>
+                  </select>
+                  <ChevronDown className="w-3.5 h-3.5 text-stone-500 pointer-events-none -ml-1" />
+                </div>
 
-              <button
-                id="open-filters-btn"
-                onClick={() => setShowFiltersModal(true)}
-                className="w-12 h-12 rounded-2xl bg-stone-900 hover:bg-stone-800 text-white flex items-center justify-center shadow-md shrink-0 transition-colors cursor-pointer"
-                title="Фильтры"
-              >
-                <SlidersHorizontal className="w-4 h-4" />
-              </button>
-            </div>
+                {/* Search input */}
+                <div className="flex-1 flex items-center bg-stone-50 rounded-2xl px-4 py-2.5 border border-stone-200/80 focus-within:border-stone-400 focus-within:bg-white transition-all shadow-2xs">
+                  <Search className="w-4 h-4 text-stone-400 mr-3 shrink-0" />
+                  <input
+                    type="text"
+                    id="search-input"
+                    placeholder="Поиск по адресу, району, городу или названию..."
+                    value={filters.searchQuery}
+                    onChange={(e) => setFilters((prev) => ({ ...prev, searchQuery: e.target.value }))}
+                    className="w-full text-xs sm:text-sm bg-transparent border-none focus:outline-none placeholder:text-stone-400 font-medium text-stone-900"
+                  />
+                  {filters.searchQuery && (
+                    <button
+                      onClick={() => setFilters((prev) => ({ ...prev, searchQuery: '' }))}
+                      className="text-stone-400 hover:text-stone-600 text-xs px-1 font-bold cursor-pointer"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
 
-            {/* Quick Category Tabs */}
-            <div className="flex items-center gap-2 overflow-x-auto pb-1 -mx-5 px-5 scrollbar-none">
-              {categoryTabs.map((tab) => {
-                const active = filters.propertyType === tab.id || (tab.id === 'all' && filters.propertyType === 'all');
-                return (
+                {/* Deal Type Switch (Rent / Sale / All) */}
+                <div className="flex bg-stone-100 p-1 rounded-2xl text-xs font-bold text-stone-700 shrink-0">
                   <button
-                    key={tab.id}
-                    id={`cat-pill-${tab.id}`}
-                    onClick={() => setFilters((prev) => ({ ...prev, propertyType: tab.id as any }))}
-                    className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
-                      active
-                        ? 'bg-stone-900 text-white shadow-sm'
-                        : 'bg-white text-stone-600 hover:bg-stone-200/80 border border-stone-200'
+                    onClick={() => setFilters((prev) => ({ ...prev, dealType: 'all' }))}
+                    className={`px-3 py-2 rounded-xl text-center transition-all cursor-pointer ${
+                      filters.dealType === 'all' ? 'bg-white text-stone-900 shadow-xs' : 'text-stone-600 hover:text-stone-900'
                     }`}
                   >
-                    {tab.label}
+                    Все
                   </button>
-                );
-              })}
-            </div>
-
-            {/* Deal Type Switch (Rent / Sale / All) */}
-            <div className="flex bg-stone-200/80 p-1 rounded-xl text-xs font-bold text-stone-700">
-              <button
-                onClick={() => setFilters((prev) => ({ ...prev, dealType: 'all' }))}
-                className={`flex-1 py-1.5 rounded-lg text-center transition-all cursor-pointer ${
-                  filters.dealType === 'all' ? 'bg-white text-stone-900 shadow-xs' : 'text-stone-600'
-                }`}
-              >
-                Все типы
-              </button>
-              <button
-                onClick={() => setFilters((prev) => ({ ...prev, dealType: 'rent' }))}
-                className={`flex-1 py-1.5 rounded-lg text-center transition-all cursor-pointer ${
-                  filters.dealType === 'rent' ? 'bg-stone-900 text-white shadow-xs' : 'text-stone-600'
-                }`}
-              >
-                В аренду
-              </button>
-              <button
-                onClick={() => setFilters((prev) => ({ ...prev, dealType: 'sale' }))}
-                className={`flex-1 py-1.5 rounded-lg text-center transition-all cursor-pointer ${
-                  filters.dealType === 'sale' ? 'bg-emerald-700 text-white shadow-xs' : 'text-stone-600'
-                }`}
-              >
-                На продажу
-              </button>
-            </div>
-
-            {/* Section: Featured Properties (Horizontal Carousel) */}
-            {featuredProperties.length > 0 && !filters.searchQuery && (
-              <section className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <h3 className="font-extrabold text-base text-stone-900">Избранные предложения</h3>
                   <button
-                    onClick={() => setActiveTab('map')}
-                    className="text-xs font-bold text-amber-700 hover:text-amber-900 cursor-pointer"
+                    onClick={() => setFilters((prev) => ({ ...prev, dealType: 'rent' }))}
+                    className={`px-3 py-2 rounded-xl text-center transition-all cursor-pointer ${
+                      filters.dealType === 'rent' ? 'bg-stone-900 text-white shadow-xs' : 'text-stone-600 hover:text-stone-900'
+                    }`}
                   >
-                    Смотреть на карте →
+                    Аренда
+                  </button>
+                  <button
+                    onClick={() => setFilters((prev) => ({ ...prev, dealType: 'sale' }))}
+                    className={`px-3 py-2 rounded-xl text-center transition-all cursor-pointer ${
+                      filters.dealType === 'sale' ? 'bg-emerald-700 text-white shadow-xs' : 'text-stone-600 hover:text-stone-900'
+                    }`}
+                  >
+                    Продажа
                   </button>
                 </div>
 
-                <div className="flex gap-4 overflow-x-auto pb-2 -mx-5 px-5 scrollbar-none snap-x">
+                {/* Filters modal trigger */}
+                <button
+                  id="open-filters-btn"
+                  onClick={() => setShowFiltersModal(true)}
+                  className="px-4 py-2.5 rounded-2xl bg-stone-900 hover:bg-stone-800 text-white flex items-center justify-center gap-2 shadow-sm shrink-0 transition-colors cursor-pointer text-xs font-bold"
+                  title="Расширенные фильтры"
+                >
+                  <SlidersHorizontal className="w-4 h-4" />
+                  <span>Фильтры</span>
+                  {activeFiltersCount > 0 && (
+                    <span className="bg-amber-500 text-stone-950 text-[10px] font-black w-4 h-4 rounded-full flex items-center justify-center">
+                      {activeFiltersCount}
+                    </span>
+                  )}
+                </button>
+              </div>
+
+              {/* Quick Category Tabs */}
+              <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none pt-1">
+                {categoryTabs.map((tab) => {
+                  const active = filters.propertyType === tab.id || (tab.id === 'all' && filters.propertyType === 'all');
+                  return (
+                    <button
+                      key={tab.id}
+                      id={`cat-pill-${tab.id}`}
+                      onClick={() => setFilters((prev) => ({ ...prev, propertyType: tab.id as any }))}
+                      className={`px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
+                        active
+                          ? 'bg-stone-900 text-white shadow-xs'
+                          : 'bg-stone-100 text-stone-600 hover:bg-stone-200/80 border border-stone-200/80'
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Section: Featured Properties */}
+            {featuredProperties.length > 0 && !filters.searchQuery && (
+              <section className="space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <h3 className="font-black text-lg sm:text-xl text-stone-900">Избранные предложения</h3>
+                    <p className="text-xs text-stone-500">Лучшие проверенные объекты недвижимости с высоким рейтингом</p>
+                  </div>
+                  <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap">
+                    <button
+                      id="view-all-properties-btn"
+                      onClick={() => {
+                        const elem = document.getElementById('all-properties-catalog');
+                        if (elem) {
+                          elem.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        }
+                      }}
+                      className="text-xs sm:text-sm font-bold text-stone-700 hover:text-stone-950 bg-stone-100 hover:bg-stone-200/90 px-3.5 py-1.5 rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer border border-stone-200/80 shadow-2xs"
+                    >
+                      <Layers className="w-3.5 h-3.5 text-stone-600" />
+                      <span>Рассмотреть все объявления</span>
+                    </button>
+                    <button
+                      id="view-on-map-featured-btn"
+                      onClick={() => setActiveTab('map')}
+                      className="text-xs sm:text-sm font-bold text-amber-800 hover:text-amber-950 bg-amber-100/90 hover:bg-amber-200 px-3.5 py-1.5 rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer border border-amber-300/60 shadow-2xs"
+                    >
+                      <Compass className="w-3.5 h-3.5 text-amber-700" />
+                      <span>Смотреть на карте →</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Responsive Grid for Featured Properties on Web */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
                   {featuredProperties.map((property) => (
-                    <div key={property.id} className="w-72 shrink-0 snap-start">
-                      <PropertyCard
-                        property={property}
-                        onClick={() => setSelectedProperty(property)}
-                        isFavorite={favorites.includes(property.id)}
-                        onToggleFavorite={(e) => toggleFavorite(property.id, e)}
-                      />
-                    </div>
+                    <PropertyCard
+                      key={property.id}
+                      property={property}
+                      onClick={() => setSelectedProperty(property)}
+                      isFavorite={favorites.includes(property.id)}
+                      onToggleFavorite={(e) => toggleFavorite(property.id, e)}
+                    />
                   ))}
                 </div>
               </section>
             )}
 
-            {/* Section: Nearby Your Location / All Results */}
-            <section className="space-y-3">
-              <div className="flex items-center justify-between">
-                <h3 className="font-extrabold text-base text-stone-900">
-                  {filters.searchQuery ? `Результаты поиска (${filteredProperties.length})` : 'Рядом с вами'}
-                </h3>
-                <span className="text-xs text-stone-500 font-semibold">
-                  {filteredProperties.length} объявлений
-                </span>
+            {/* Section: All / Filtered Results */}
+            <section id="all-properties-catalog" className="space-y-4 pt-2">
+              <div className="flex items-center justify-between border-b border-stone-200/80 pb-3">
+                <div>
+                  <h3 className="font-black text-lg sm:text-xl text-stone-900">
+                    {filters.searchQuery ? `Результаты поиска (${filteredProperties.length})` : 'Каталог недвижимости'}
+                  </h3>
+                  <p className="text-xs text-stone-500">
+                    Найдено {filteredProperties.length} объявлений по заданным критериям
+                  </p>
+                </div>
+                
+                {/* View on map quick link */}
+                <button
+                  onClick={() => setActiveTab('map')}
+                  className="px-3.5 py-1.5 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-800 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer border border-stone-200/80"
+                >
+                  <MapIcon className="w-3.5 h-3.5 text-stone-600" />
+                  <span>Открыть на карте</span>
+                </button>
               </div>
 
               {filteredProperties.length === 0 ? (
-                <div className="bg-white rounded-3xl p-8 text-center space-y-2 border border-stone-200">
-                  <Search className="w-8 h-8 text-stone-300 mx-auto" />
-                  <h4 className="font-bold text-sm text-stone-800">Объекты не найдены</h4>
+                <div className="bg-white rounded-3xl p-12 text-center space-y-3 border border-stone-200 max-w-lg mx-auto">
+                  <Search className="w-10 h-10 text-stone-300 mx-auto" />
+                  <h4 className="font-bold text-base text-stone-800">Объекты не найдены</h4>
                   <p className="text-xs text-stone-500">Попробуйте изменить параметры фильтров или поисковый запрос</p>
                   <button
                     onClick={() =>
@@ -571,15 +558,15 @@ export default function App() {
                         sortBy: 'featured'
                       })
                     }
-                    className="mt-2 px-4 py-1.5 bg-stone-900 text-white rounded-xl text-xs font-bold"
+                    className="mt-2 px-5 py-2 bg-stone-900 hover:bg-stone-800 text-white rounded-xl text-xs font-bold transition-colors"
                   >
                     Сбросить фильтры
                   </button>
                 </div>
               ) : (
-                <div className="space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
                   {filteredProperties.map((property) => (
-                    <PropertyNearbyCard
+                    <PropertyCard
                       key={property.id}
                       property={property}
                       onClick={() => setSelectedProperty(property)}
@@ -594,7 +581,7 @@ export default function App() {
           </main>
         )}
 
-        {/* TAB CONTENT: EXPLORE MAP (Full Screen with Floating Search & Filters) */}
+        {/* TAB CONTENT: EXPLORE MAP (Full Screen Edge-to-Edge with Centered Floating Controls) */}
         {activeTab === 'map' && (
           <main className="flex-1 w-full h-full relative overflow-hidden">
             
@@ -609,206 +596,243 @@ export default function App() {
               className="w-full h-full absolute inset-0 z-0"
             />
 
-            {/* 2. Floating Top Filter & Search Controls */}
-            <div className="absolute top-3 inset-x-3 z-30 flex flex-col gap-2 pointer-events-none">
-              
-              {/* Search Bar & Filter Button & Profile */}
-              <div className="flex items-center gap-2 pointer-events-auto">
-                <div className="flex-1 flex items-center bg-white/95 backdrop-blur-md rounded-2xl px-3.5 py-2.5 border border-stone-200/80 shadow-lg">
-                  <Search className="w-4 h-4 text-stone-400 mr-2 shrink-0" />
-                  <input
-                    type="text"
-                    id="map-search-input"
-                    placeholder="Поиск по городу, району или названию..."
-                    value={filters.searchQuery}
-                    onChange={(e) => setFilters((prev) => ({ ...prev, searchQuery: e.target.value }))}
-                    className="w-full text-xs bg-transparent border-none focus:outline-none placeholder:text-stone-400 font-medium text-stone-900"
-                  />
-                  {filters.searchQuery && (
-                    <button
-                      onClick={() => setFilters((prev) => ({ ...prev, searchQuery: '' }))}
-                      className="text-stone-400 hover:text-stone-600 text-xs px-1 font-bold"
-                    >
-                      ✕
-                    </button>
-                  )}
-                </div>
-
-                <button
-                  id="map-filters-btn"
-                  onClick={() => setShowFiltersModal(true)}
-                  className="relative h-10 px-3 rounded-2xl bg-stone-900 hover:bg-stone-800 text-white flex items-center justify-center gap-1.5 shadow-lg shrink-0 transition-all active:scale-95 cursor-pointer"
-                  title="Открыть фильтры"
-                >
-                  <SlidersHorizontal className="w-4 h-4" />
-                  {activeFiltersCount > 0 && (
-                    <span className="bg-amber-500 text-stone-900 text-[10px] font-black w-4 h-4 rounded-full flex items-center justify-center">
-                      {activeFiltersCount}
-                    </span>
-                  )}
-                </button>
-              </div>
-
-              {/* City Quick Pills & Deal Type Filter */}
-              <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 scrollbar-none pointer-events-auto">
-                {/* Cities */}
-                <div className="flex items-center bg-white/90 backdrop-blur-md p-1 rounded-xl border border-stone-200/80 shadow-md shrink-0">
-                  <span className="text-[10px] font-bold text-stone-400 px-1.5 uppercase">Город:</span>
-                  {[
-                    { id: 'all', label: 'Все' },
-                    { id: 'Ташкент', label: 'Ташкент' },
-                    { id: 'Самарканд', label: 'Самарканд' },
-                    { id: 'Бухара', label: 'Бухара' }
-                  ].map((city) => (
-                    <button
-                      key={city.id}
-                      onClick={() => setFilters((prev) => ({ ...prev, city: city.id }))}
-                      className={`px-2 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
-                        filters.city === city.id
-                          ? 'bg-stone-900 text-white shadow-xs'
-                          : 'text-stone-600 hover:text-stone-900 hover:bg-stone-100'
-                      }`}
-                    >
-                      {city.label}
-                    </button>
-                  ))}
-                </div>
-
-                {/* Deal Type Switcher */}
-                <div className="flex items-center bg-white/90 backdrop-blur-md p-1 rounded-xl border border-stone-200/80 shadow-md shrink-0">
-                  {[
-                    { id: 'all', label: 'Все' },
-                    { id: 'rent', label: 'Аренда' },
-                    { id: 'sale', label: 'Купить' }
-                  ].map((deal) => (
-                    <button
-                      key={deal.id}
-                      onClick={() => setFilters((prev) => ({ ...prev, dealType: deal.id as any }))}
-                      className={`px-2 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
-                        filters.dealType === deal.id
-                          ? 'bg-amber-600 text-white shadow-xs'
-                          : 'text-stone-600 hover:text-stone-900 hover:bg-stone-100'
-                      }`}
-                    >
-                      {deal.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Category Pills Slider */}
-              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none pointer-events-auto">
-                {categoryTabs.map((tab) => {
-                  const active = filters.propertyType === tab.id || (tab.id === 'all' && filters.propertyType === 'all');
-                  return (
-                    <button
-                      key={tab.id}
-                      onClick={() => setFilters((prev) => ({ ...prev, propertyType: tab.id as any }))}
-                      className={`px-3 py-1.5 rounded-xl text-[11px] font-bold whitespace-nowrap transition-all shadow-sm cursor-pointer border ${
-                        active
-                          ? 'bg-stone-900 text-white border-stone-900'
-                          : 'bg-white/90 backdrop-blur-md text-stone-700 hover:bg-white border-stone-200/80'
-                      }`}
-                    >
-                      {tab.label}
-                    </button>
-                  );
-                })}
-              </div>
-
-            </div>
-
-            {/* 3. Floating Bottom Layer: Property Card Slider or Empty state */}
-            <div className="absolute bottom-20 inset-x-3 z-30 pointer-events-none">
-              {filteredProperties.length === 0 ? (
-                <div className="pointer-events-auto bg-white/95 backdrop-blur-md p-3.5 rounded-2xl border border-stone-200/90 shadow-2xl flex items-center justify-between gap-3 max-w-sm mx-auto animate-fade-in">
-                  <div className="text-xs text-stone-700">
-                    <p className="font-bold">Нет объектов по фильтрам</p>
-                    <p className="text-[10px] text-stone-500">Попробуйте изменить параметры</p>
-                  </div>
+            {/* 2. Floating Top Filter & Search Controls (Centered Container) */}
+            <div className="absolute top-4 inset-x-4 sm:inset-x-6 z-30 flex flex-col items-center gap-2 pointer-events-none">
+              <div className="w-full max-w-4xl flex flex-col gap-2 pointer-events-none">
+                
+                {/* Search Bar & Filter Button & Home shortcut */}
+                <div className="flex items-center gap-2.5 pointer-events-auto">
+                  {/* Brand / Back Home button */}
                   <button
-                    onClick={handleResetFilters}
-                    className="px-3 py-1.5 bg-stone-900 text-white rounded-xl text-xs font-bold shrink-0 hover:bg-stone-800 transition-colors"
+                    onClick={() => setActiveTab('home')}
+                    className="h-11 px-3.5 bg-stone-900/95 hover:bg-stone-900 text-white backdrop-blur-md rounded-2xl flex items-center gap-1.5 shadow-lg shrink-0 transition-transform active:scale-95 cursor-pointer font-bold text-xs"
+                    title="Вернуться на главную"
                   >
-                    Сбросить
+                    <Home className="w-4 h-4" />
+                    <span className="hidden sm:inline">Каталог</span>
+                  </button>
+
+                  <div className="flex-1 flex items-center bg-white/95 backdrop-blur-md rounded-2xl px-4 py-2.5 border border-stone-200/90 shadow-xl">
+                    <Search className="w-4 h-4 text-stone-400 mr-2.5 shrink-0" />
+                    <input
+                      type="text"
+                      id="map-search-input"
+                      placeholder="Поиск по городу, району или названию..."
+                      value={filters.searchQuery}
+                      onChange={(e) => setFilters((prev) => ({ ...prev, searchQuery: e.target.value }))}
+                      className="w-full text-xs sm:text-sm bg-transparent border-none focus:outline-none placeholder:text-stone-400 font-medium text-stone-900"
+                    />
+                    {filters.searchQuery && (
+                      <button
+                        onClick={() => setFilters((prev) => ({ ...prev, searchQuery: '' }))}
+                        className="text-stone-400 hover:text-stone-600 text-xs px-1 font-bold"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+
+                  <button
+                    id="map-filters-btn"
+                    onClick={() => setShowFiltersModal(true)}
+                    className="relative h-11 px-4 rounded-2xl bg-stone-900 hover:bg-stone-800 text-white flex items-center justify-center gap-2 shadow-xl shrink-0 transition-all active:scale-95 cursor-pointer font-bold text-xs"
+                    title="Открыть фильтры"
+                  >
+                    <SlidersHorizontal className="w-4 h-4" />
+                    <span className="hidden sm:inline">Фильтры</span>
+                    {activeFiltersCount > 0 && (
+                      <span className="bg-amber-500 text-stone-950 text-[10px] font-black w-4 h-4 rounded-full flex items-center justify-center">
+                        {activeFiltersCount}
+                      </span>
+                    )}
+                  </button>
+
+                  {/* AI Quick Button */}
+                  <button
+                    onClick={() => setShowAIModal(true)}
+                    className="h-11 px-3.5 bg-amber-500 hover:bg-amber-600 text-stone-950 rounded-2xl flex items-center gap-1.5 shadow-xl shrink-0 transition-all active:scale-95 cursor-pointer font-bold text-xs"
+                    title="AI Консультант"
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    <span className="hidden md:inline">AI Подбор</span>
                   </button>
                 </div>
-              ) : (
-                <div className="flex gap-2.5 overflow-x-auto pb-1 pointer-events-auto scrollbar-none">
-                  {filteredProperties.map((property) => {
-                    const isSelected = selectedProperty?.id === property.id;
-                    return (
-                      <div
-                        key={property.id}
-                        onClick={() => setSelectedProperty(property)}
-                        className={`bg-white/95 backdrop-blur-md p-2 rounded-2xl border shadow-xl flex items-center gap-3 cursor-pointer shrink-0 w-72 transition-all hover:scale-[1.02] ${
-                          isSelected
-                            ? 'border-amber-500 ring-2 ring-amber-400/40 shadow-amber-500/10'
-                            : 'border-stone-200/80 hover:border-stone-400'
+
+                {/* City Quick Pills & Deal Type Filter */}
+                <div className="flex items-center gap-2 overflow-x-auto pb-0.5 scrollbar-none pointer-events-auto">
+                  {/* Cities */}
+                  <div className="flex items-center bg-white/95 backdrop-blur-md p-1 rounded-2xl border border-stone-200/90 shadow-md shrink-0">
+                    <span className="text-[10px] font-bold text-stone-400 px-2 uppercase">Город:</span>
+                    {[
+                      { id: 'all', label: 'Все' },
+                      { id: 'Ташкент', label: 'Ташкент' },
+                      { id: 'Самарканд', label: 'Самарканд' },
+                      { id: 'Бухара', label: 'Бухара' }
+                    ].map((city) => (
+                      <button
+                        key={city.id}
+                        onClick={() => setFilters((prev) => ({ ...prev, city: city.id }))}
+                        className={`px-2.5 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                          filters.city === city.id
+                            ? 'bg-stone-900 text-white shadow-xs'
+                            : 'text-stone-600 hover:text-stone-900 hover:bg-stone-100'
                         }`}
                       >
-                        <img
-                          src={property.photos[0]}
-                          alt={property.title}
-                          className="w-14 h-14 rounded-xl object-cover shrink-0"
-                          referrerPolicy="no-referrer"
-                        />
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center justify-between">
-                            <span className={`text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded ${
-                              property.dealType === 'rent' ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'
-                            }`}>
-                              {property.dealType === 'rent' ? 'Аренда' : 'Продажа'}
-                            </span>
-                            <span className="text-xs font-black text-stone-900">
-                              {property.price.toLocaleString()} {property.currency}
-                            </span>
-                          </div>
-                          <h4 className="font-bold text-xs text-stone-900 truncate mt-0.5">{property.title}</h4>
-                          <p className="text-[10px] text-stone-500 truncate">{property.location.neighborhood}, {property.location.city}</p>
-                        </div>
-                      </div>
-                    );
-                  })}
+                        {city.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Deal Type Switcher */}
+                  <div className="flex items-center bg-white/95 backdrop-blur-md p-1 rounded-2xl border border-stone-200/90 shadow-md shrink-0">
+                    {[
+                      { id: 'all', label: 'Все' },
+                      { id: 'rent', label: 'Аренда' },
+                      { id: 'sale', label: 'Купить' }
+                    ].map((deal) => (
+                      <button
+                        key={deal.id}
+                        onClick={() => setFilters((prev) => ({ ...prev, dealType: deal.id as any }))}
+                        className={`px-2.5 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                          filters.dealType === deal.id
+                            ? 'bg-amber-600 text-white shadow-xs'
+                            : 'text-stone-600 hover:text-stone-900 hover:bg-stone-100'
+                        }`}
+                      >
+                        {deal.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Category Pills Slider */}
+                  <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none">
+                    {categoryTabs.map((tab) => {
+                      const active = filters.propertyType === tab.id || (tab.id === 'all' && filters.propertyType === 'all');
+                      return (
+                        <button
+                          key={tab.id}
+                          onClick={() => setFilters((prev) => ({ ...prev, propertyType: tab.id as any }))}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all shadow-xs cursor-pointer border ${
+                            active
+                              ? 'bg-stone-900 text-white border-stone-900'
+                              : 'bg-white/95 backdrop-blur-md text-stone-700 hover:bg-white border-stone-200/90'
+                          }`}
+                        >
+                          {tab.label}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-              )}
+
+              </div>
+            </div>
+
+            {/* 3. Floating Bottom Layer: Property Card Slider (Centered Container) */}
+            <div className="absolute bottom-20 sm:bottom-6 inset-x-4 sm:inset-x-8 z-30 pointer-events-none flex justify-center">
+              <div className="w-full max-w-5xl pointer-events-none">
+                {filteredProperties.length === 0 ? (
+                  <div className="pointer-events-auto bg-white/95 backdrop-blur-md p-4 rounded-2xl border border-stone-200 shadow-2xl flex items-center justify-between gap-3 max-w-sm mx-auto">
+                    <div className="text-xs text-stone-700">
+                      <p className="font-bold">Нет объектов по фильтрам</p>
+                      <p className="text-[10px] text-stone-500">Попробуйте сбросить параметры</p>
+                    </div>
+                    <button
+                      onClick={handleResetFilters}
+                      className="px-3.5 py-1.5 bg-stone-900 text-white rounded-xl text-xs font-bold shrink-0 hover:bg-stone-800 transition-colors"
+                    >
+                      Сбросить
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex gap-3 overflow-x-auto pb-2 pointer-events-auto scrollbar-none px-1">
+                    {filteredProperties.map((property) => {
+                      const isSelected = selectedProperty?.id === property.id;
+                      return (
+                        <div
+                          key={property.id}
+                          onClick={() => setSelectedProperty(property)}
+                          className={`bg-white/95 backdrop-blur-md p-2.5 rounded-2xl border shadow-2xl flex items-center gap-3 cursor-pointer shrink-0 w-72 sm:w-80 transition-all hover:scale-[1.02] ${
+                            isSelected
+                              ? 'border-amber-500 ring-2 ring-amber-400/50 shadow-amber-500/20'
+                              : 'border-stone-200/90 hover:border-stone-400'
+                          }`}
+                        >
+                          <img
+                            src={property.photos[0]}
+                            alt={property.title}
+                            className="w-16 h-16 rounded-xl object-cover shrink-0"
+                            referrerPolicy="no-referrer"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center justify-between">
+                              <span className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded ${
+                                property.dealType === 'rent' ? 'bg-amber-100 text-amber-900' : 'bg-emerald-100 text-emerald-900'
+                              }`}>
+                                {property.dealType === 'rent' ? 'Аренда' : 'Продажа'}
+                              </span>
+                              <span className="text-xs font-black text-stone-900">
+                                {property.price.toLocaleString()} {property.currency}
+                              </span>
+                            </div>
+                            <h4 className="font-bold text-xs text-stone-900 truncate mt-1">{property.title}</h4>
+                            <p className="text-[10px] text-stone-500 truncate flex items-center gap-1 mt-0.5">
+                              <MapPin className="w-3 h-3 shrink-0 text-stone-400" />
+                              <span>{property.location.neighborhood}, {property.location.city}</span>
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
 
           </main>
         )}
 
-        {/* TAB CONTENT: FAVORITES */}
+        {/* TAB CONTENT: FAVORITES (Responsive Full Width Container) */}
         {activeTab === 'favorites' && (
-          <main className="flex-1 px-5 py-4 space-y-4">
-            <div className="flex items-center justify-between pb-2 border-b border-stone-200">
-              <h3 className="font-extrabold text-base text-stone-900 flex items-center gap-2">
-                <span>Избранные объекты</span>
-                <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-bold">
-                  {favoriteProperties.length}
-                </span>
-              </h3>
+          <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+            <div className="flex items-center justify-between pb-3 border-b border-stone-200">
+              <div>
+                <h3 className="font-black text-xl text-stone-900 flex items-center gap-2">
+                  <span>Избранные объекты</span>
+                  <span className="text-xs bg-red-100 text-red-700 px-2.5 py-0.5 rounded-full font-bold">
+                    {favoriteProperties.length}
+                  </span>
+                </h3>
+                <p className="text-xs text-stone-500">Сохраненные вами предложения недвижимости</p>
+              </div>
+              <button
+                onClick={() => setActiveTab('home')}
+                className="px-4 py-2 bg-stone-900 hover:bg-stone-800 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer"
+              >
+                Все предложения
+              </button>
             </div>
 
             {favoriteProperties.length === 0 ? (
-              <div className="bg-white rounded-3xl p-10 text-center space-y-3 border border-stone-200 my-8">
+              <div className="bg-white rounded-3xl p-12 text-center space-y-3 border border-stone-200 my-8 max-w-lg mx-auto">
                 <div className="w-14 h-14 rounded-full bg-red-50 text-red-500 flex items-center justify-center mx-auto">
                   <Heart className="w-6 h-6" />
                 </div>
-                <h4 className="font-bold text-sm text-stone-800">Список избранного пуст</h4>
+                <h4 className="font-bold text-base text-stone-800">Список избранного пуст</h4>
                 <p className="text-xs text-stone-500 max-w-xs mx-auto">
                   Нажмите на иконку сердечка на любой карточке объекта, чтобы сохранить его в избранное.
                 </p>
                 <button
                   onClick={() => setActiveTab('home')}
-                  className="px-4 py-2 bg-stone-900 text-white rounded-xl text-xs font-bold"
+                  className="px-5 py-2 bg-stone-900 text-white rounded-xl text-xs font-bold hover:bg-stone-800 transition-colors"
                 >
                   Смотреть объекты
                 </button>
               </div>
             ) : (
-              <div className="space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
                 {favoriteProperties.map((property) => (
-                  <PropertyNearbyCard
+                  <PropertyCard
                     key={property.id}
                     property={property}
                     onClick={() => setSelectedProperty(property)}
@@ -826,6 +850,14 @@ export default function App() {
           activeTab={activeTab}
           onTabChange={handleTabChange}
           favoritesCount={favorites.length}
+          currentUser={currentUser}
+          onProfileClick={() => {
+            if (currentUser) {
+              setShowProfileModal(true);
+            } else {
+              setShowAuthModal(true);
+            }
+          }}
         />
 
       </div>
