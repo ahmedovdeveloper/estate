@@ -34,7 +34,7 @@ import { PropertyNearbyCard } from './components/PropertyNearbyCard';
 import { PropertyDetailPage } from './components/PropertyDetailPage';
 import { InteractiveMap } from './components/InteractiveMap';
 import { AddPropertyModal } from './components/AddPropertyModal';
-import { AIAssistantModal } from './components/AIAssistantModal';
+import { AISearchPage } from './components/AISearchPage';
 import { FiltersModal } from './components/FiltersModal';
 import { BookingModal } from './components/BookingModal';
 import { ContactAgentModal } from './components/ContactAgentModal';
@@ -75,7 +75,6 @@ export default function App() {
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showAdminModal, setShowAdminModal] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
-  const [showAIModal, setShowAIModal] = useState(false);
   const [showFiltersModal, setShowFiltersModal] = useState(false);
   const [showNotificationsModal, setShowNotificationsModal] = useState(false);
 
@@ -312,10 +311,6 @@ export default function App() {
   // Handle Tab Switch
   const handleTabChange = (tab: NavTab) => {
     setSelectedProperty(null); // Return from detail page to main tabs
-    if (tab === 'assistant') {
-      setShowAIModal(true);
-      return;
-    }
     if (tab === 'add') {
       if (!currentUser) {
         setShowAuthModal(true);
@@ -368,7 +363,7 @@ export default function App() {
 
   return (
     <div className={`min-h-screen w-full bg-stone-100 text-stone-900 flex flex-col selection:bg-amber-200 selection:text-stone-900 ${
-      activeTab === 'map' ? 'h-[100dvh] overflow-hidden pb-0' : 'pb-24 sm:pb-20'
+      activeTab === 'map' || activeTab === 'assistant' ? 'h-[100dvh] overflow-hidden pb-0' : 'pb-24 sm:pb-20'
     }`}>
       
       {/* Toast Notification */}
@@ -381,7 +376,7 @@ export default function App() {
 
       {/* Main Full-Screen App Container without top Header */}
       <div className={`w-full bg-stone-50 flex-1 flex flex-col ${
-        activeTab === 'map' ? 'h-[100dvh] overflow-hidden' : 'min-h-screen'
+        activeTab === 'map' || activeTab === 'assistant' ? 'h-[100dvh] overflow-hidden' : 'min-h-screen'
       }`}>
         
         {/* MAIN BODY: DETAIL PAGE OR TAB VIEWS */}
@@ -491,6 +486,17 @@ export default function App() {
                       {activeFiltersCount}
                     </span>
                   )}
+                </button>
+
+                {/* AI Search Quick Trigger Button */}
+                <button
+                  id="home-ai-search-btn"
+                  onClick={() => setActiveTab('assistant')}
+                  className="px-3 sm:px-3.5 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-900 border border-amber-300 flex items-center justify-center gap-1.5 shadow-2xs shrink-0 transition-all cursor-pointer text-xs font-bold active:scale-95"
+                  title="AI Поиск недвижимости"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-amber-600 animate-pulse" />
+                  <span className="hidden sm:inline">AI Поиск</span>
                 </button>
               </div>
 
@@ -801,12 +807,12 @@ export default function App() {
                     </button>
                   ) : (
                     <button
-                      onClick={() => setShowAIModal(true)}
-                      className="h-11 px-3.5 bg-amber-500 hover:bg-amber-600 text-stone-950 rounded-2xl flex items-center gap-1.5 shadow-xl shrink-0 transition-all active:scale-95 cursor-pointer font-bold text-xs"
-                      title="AI Консультант"
+                      onClick={() => setActiveTab('assistant')}
+                      className="h-11 px-3.5 bg-amber-500 hover:bg-amber-400 text-stone-950 rounded-2xl flex items-center gap-1.5 shadow-xl shrink-0 transition-all active:scale-95 cursor-pointer font-bold text-xs"
+                      title="AI Поиск & Карта"
                     >
                       <Sparkles className="w-4 h-4" />
-                      <span className="hidden md:inline">AI Подбор</span>
+                      <span className="hidden md:inline">AI Поиск</span>
                     </button>
                   )}
                 </div>
@@ -998,6 +1004,24 @@ export default function App() {
           </main>
         )}
 
+        {/* TAB CONTENT: AI SEARCH & MAP PAGE */}
+        {activeTab === 'assistant' && (
+          <AISearchPage
+            properties={properties}
+            onSelectProperty={(property) => setSelectedProperty(property)}
+            favorites={favorites}
+            onToggleFavorite={(id, e) => toggleFavorite(id, e)}
+            onNavigateToMapTab={(filteredIds) => {
+              if (filteredIds && filteredIds.length > 0) {
+                // If specific matches, we can switch to map
+                setActiveTab('map');
+              } else {
+                setActiveTab('map');
+              }
+            }}
+          />
+        )}
+
         {/* TAB CONTENT: FULL PROFILE PAGE */}
         {activeTab === 'profile' && (
           <ProfilePage
@@ -1008,7 +1032,7 @@ export default function App() {
               setEditProperty(null);
               setShowAddModal(true);
             }}
-            onOpenAIAssistant={() => setShowAIModal(true)}
+            onOpenAIAssistant={() => setActiveTab('assistant')}
             onOpenAdmin={() => setShowAdminModal(true)}
             onOpenFavorites={() => setActiveTab('favorites')}
             favoritesCount={favorites.length}
@@ -1103,15 +1127,7 @@ export default function App() {
         currentUser={currentUser}
       />
 
-      {/* 7. AI Assistant Modal */}
-      <AIAssistantModal
-        isOpen={showAIModal}
-        onClose={() => setShowAIModal(false)}
-        properties={properties}
-        onSelectProperty={(p) => setSelectedProperty(p)}
-      />
-
-      {/* 8. Filters Modal */}
+      {/* 7. Filters Modal */}
       <FiltersModal
         isOpen={showFiltersModal}
         onClose={() => setShowFiltersModal(false)}

@@ -1,6 +1,6 @@
 {
   "name": "Remix Estate Hub",
-  "description": "Modern real estate platform with interactive map, property search, mobile and web responsive views, and Gemini-powered AI property assistant.",
+  "description": "Modern real estate platform with dedicated AI search page, interactive map visualization, property filters, and Gemini 3.7 property matching for Uzbekistan.",
   "requestFramePermissions": [
     "geolocation"
   ],

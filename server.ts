@@ -412,18 +412,76 @@ async function startServer() {
       dealType: p.dealType === 'rent' ? 'Аренда' : 'Продажа',
       type: p.propertyType,
       price: `${p.price} ${p.currency}${p.pricePeriod || ''}`,
-      location: `${p.location.city}, ${p.location.neighborhood}, ${p.location.address}`,
+      rawPrice: p.price,
+      city: p.location.city,
+      neighborhood: p.location.neighborhood,
+      address: p.location.address,
+      lat: p.location.lat,
+      lng: p.location.lng,
       rooms: p.specs.bedrooms,
       area: `${p.specs.areaSqFt} м²`,
       amenities: p.amenities.slice(0, 4).join(', ')
     }));
 
+    // Helper for heuristic search
+    const findMatchingProperties = (query: string): string[] => {
+      const q = query.toLowerCase();
+      const scored = propertiesStore.map((p) => {
+        let score = 0;
+        const text = `${p.title} ${p.description} ${p.location.city} ${p.location.neighborhood} ${p.location.address} ${p.propertyType} ${p.dealType} ${p.amenities.join(' ')}`.toLowerCase();
+        
+        // City match
+        if (q.includes('ташкент') && p.location.city.toLowerCase().includes('ташкент')) score += 5;
+        if (q.includes('самарканд') && p.location.city.toLowerCase().includes('самарканд')) score += 5;
+        if (q.includes('бухар') && p.location.city.toLowerCase().includes('бухар')) score += 5;
+
+        // Deal type match
+        if ((q.includes('аренд') || q.includes('снять') || q.includes('посуточно')) && p.dealType === 'rent') score += 4;
+        if ((q.includes('куп') || q.includes('продаж') || q.includes('инвестиц')) && p.dealType === 'sale') score += 4;
+
+        // Neighborhood / district match
+        if (q.includes('мирабад') && text.includes('мирабад')) score += 4;
+        if (q.includes('юнусабад') && text.includes('юнусабад')) score += 4;
+        if (q.includes('чиланзар') && text.includes('чиланзар')) score += 4;
+        if (q.includes('шайхантахур') && text.includes('шайхантахур')) score += 4;
+        if (q.includes('city') && text.includes('city')) score += 4;
+
+        // Type match
+        if ((q.includes('квартир') || q.includes('апартамент')) && p.propertyType === 'apartment') score += 3;
+        if ((q.includes('дом') || q.includes('коттедж') || q.includes('участок')) && (p.propertyType === 'house' || p.propertyType === 'villa' || p.propertyType === 'land')) score += 3;
+        if (q.includes('вилл') && p.propertyType === 'villa') score += 4;
+        if (q.includes('офис') && (p.propertyType === 'office' || p.propertyType === 'commercial')) score += 4;
+
+        // Amenities / Metro
+        if (q.includes('метро') && (text.includes('метро') || p.facilities?.some(f => f.type === 'metro'))) score += 3;
+        if (q.includes('бассейн') && text.includes('бассейн')) score += 3;
+        if (q.includes('парк') && text.includes('парк')) score += 2;
+
+        // Room count
+        if ((q.includes('1-комн') || q.includes('однокомн') || q.includes('1 комн')) && p.specs.bedrooms === 1) score += 4;
+        if ((q.includes('2-комн') || q.includes('двухкомн') || q.includes('2 комн')) && p.specs.bedrooms === 2) score += 4;
+        if ((q.includes('3-комн') || q.includes('трехкомн') || q.includes('3 комн')) && p.specs.bedrooms === 3) score += 4;
+        if ((q.includes('4-комн') || q.includes('четырехкомн') || q.includes('4 комн')) && p.specs.bedrooms >= 4) score += 4;
+
+        return { id: p.id, score };
+      });
+
+      const filtered = scored.filter((s) => s.score > 0).sort((a, b) => b.score - a.score);
+      if (filtered.length > 0) {
+        return filtered.map((f) => f.id);
+      }
+      return propertiesStore.slice(0, 3).map((p) => p.id);
+    };
+
     const systemInstruction = `Вы — официальный AI-консультант по недвижимости портала UzEstate (Недвижимость Узбекистана).
 Ваша задача:
-1. Помогать пользователям находить идеальные квартиры, дома, виллы, участки и офисы в Ташкенте, Самарканде, Бухаре и других городах Узбекистана на русском языке.
-2. Внимательно учитывать бюджет (в $ или сумах), тип сделки (аренда или покупка), район (Мирабад, Юнусабад, Чиланзар, Шайхантахур, Самарканд и др.), этаж, инфраструктуру и метро.
+1. Помогать клиентам находить идеальные квартиры, дома, виллы, участки и коммерческую недвижимость в Ташкенте, Самарканде, Бухаре и других городах Узбекистана на русском языке.
+2. Внимательно учитывать бюджет, тип сделки (аренда или покупка), район (Мирабад, Юнусабад, Чиланзар, Шайхантахур, Самарканд и др.), этаж, инфраструктуру и станции метро.
 3. Обязательно рекомендовать РЕАЛЬНЫЕ объекты из каталога ниже при совпадении критериев.
-4. Отвечать дружелюбно, четко и профессионально в формате Markdown.
+4. В конце своего ответа ОБЯЗАТЕЛЬНО добавьте строку в точном формате:
+MATCHED_IDS: [id_объекта_1, id_объекта_2]
+(например: MATCHED_IDS: [uz-prop-1, uz-prop-3]).
+5. Отвечайте дружелюбно, структурировано, профессионально с использованием форматирования Markdown.
 
 АКТУАЛЬНЫЙ КАТАЛОГ ОБЪЕКТОВ В БАЗЕ ДАННЫХ:
 ${JSON.stringify(catalogSummary, null, 2)}
@@ -431,56 +489,89 @@ ${JSON.stringify(catalogSummary, null, 2)}
 
     try {
       const ai = getGeminiClient();
-      if (!ai) {
-        // Fallback intelligent response
-        const lowerMsg = message.toLowerCase();
-        let matched: string[] = [];
-        let advice = "Здравствуйте! Я ваш AI-консультант по недвижимости в Узбекистане. ";
+      let responseText = '';
+      let matchedPropertyIds: string[] = [];
 
-        if (lowerMsg.includes('аренд') || lowerMsg.includes('снять') || lowerMsg.includes('квартир')) {
-          matched = ['uz-prop-1', 'uz-prop-3'];
-          advice += "Для аренды в Ташкенте отлично подойдут **3-комнатная квартира в Tashkent City** (премиум класс) и **2-комнатная квартира на Юнусабаде** рядом с метро. Обе квартиры полностью укомплектованы мебелью и техникой.";
-        } else if (lowerMsg.includes('куп') || lowerMsg.includes('дом') || lowerMsg.includes('вилл') || lowerMsg.includes('самарканд')) {
-          matched = ['uz-prop-2', 'uz-prop-4'];
-          advice += "Для покупки рекомендую обратить внимание на **Элитный коттедж в Мирабадском районе** или **Виллу в Самарканде рядом с Регистаном**.";
-        } else {
-          matched = ['uz-prop-1', 'uz-prop-2'];
-          advice += "Вот проверенные топовые объекты недвижимости с геолокацией на карте Узбекистана:";
+      if (ai) {
+        const prompt = `История диалога: ${JSON.stringify(conversationHistory.slice(-4))}
+Запрос пользователя: "${message}"`;
+
+        const response = await ai.models.generateContent({
+          model: 'gemini-3.7-flash',
+          contents: prompt,
+          config: {
+            systemInstruction,
+            temperature: 0.7,
+          }
+        });
+
+        responseText = response.text || 'Вот подходящие варианты недвижимости из нашего каталога:';
+
+        // Extract MATCHED_IDS: [...] from response
+        const matchRegex = /MATCHED_IDS:\s*\[(.*?)\]/i;
+        const match = responseText.match(matchRegex);
+        if (match && match[1]) {
+          matchedPropertyIds = match[1]
+            .split(',')
+            .map((s) => s.trim().replace(/['"`]/g, ''))
+            .filter((id) => propertiesStore.some((p) => p.id === id));
+          
+          // Clean the MATCHED_IDS line from user-facing text
+          responseText = responseText.replace(matchRegex, '').trim();
         }
 
-        return res.json({
-          reply: advice,
-          matchedPropertyIds: matched
+        // Also check if any property titles or IDs appear in text
+        propertiesStore.forEach((p) => {
+          if ((responseText.includes(p.id) || responseText.includes(p.title)) && !matchedPropertyIds.includes(p.id)) {
+            matchedPropertyIds.push(p.id);
+          }
         });
       }
 
-      const prompt = `История диалога: ${JSON.stringify(conversationHistory.slice(-4))}
-Запрос пользователя: "${message}"`;
+      // If still empty or no AI key, use heuristic matching
+      if (matchedPropertyIds.length === 0) {
+        matchedPropertyIds = findMatchingProperties(message);
+      }
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.7-flash',
-        contents: prompt,
-        config: {
-          systemInstruction,
-          temperature: 0.7,
+      if (!responseText) {
+        const lowerMsg = message.toLowerCase();
+        if (lowerMsg.includes('аренд') || lowerMsg.includes('снять') || lowerMsg.includes('квартир')) {
+          responseText = "Я подобрал отличные варианты для аренды в Ташкенте с развитой инфраструктурой, мебелью и близостью к метро. Посмотрите объекты ниже и на интерактивной карте:";
+        } else if (lowerMsg.includes('куп') || lowerMsg.includes('дом') || lowerMsg.includes('вилл') || lowerMsg.includes('самарканд')) {
+          responseText = "Для покупки и долгосрочных инвестиций рекомендую обратить внимание на эти проверенные объекты недвижимости с полным пакетом документов:";
+        } else {
+          responseText = "По вашему запросу найдены актуальные объекты в каталоге недвижимости Узбекистана. Вы можете сразу увидеть их локацию на карте:";
         }
-      });
+      }
 
-      const responseText = response.text || "Вот подходящие варианты недвижимости из нашего каталога.";
+      const matchedProps = propertiesStore.filter((p) => matchedPropertyIds.includes(p.id));
+      
+      // Calculate center map coords if properties found
+      let mapCenter: [number, number] = [41.311081, 69.240562];
+      let mapZoom = 12;
 
-      const matchedPropertyIds = propertiesStore
-        .filter((p) => responseText.includes(p.id) || responseText.includes(p.title) || responseText.includes(p.location.neighborhood))
-        .map((p) => p.id);
+      if (matchedProps.length > 0) {
+        const avgLat = matchedProps.reduce((sum, p) => sum + p.location.lat, 0) / matchedProps.length;
+        const avgLng = matchedProps.reduce((sum, p) => sum + p.location.lng, 0) / matchedProps.length;
+        mapCenter = [avgLat, avgLng];
+        mapZoom = matchedProps.length === 1 ? 14 : 12;
+      }
 
       res.json({
         reply: responseText,
-        matchedPropertyIds
+        matchedPropertyIds,
+        mapCenter,
+        mapZoom,
+        matchedCount: matchedProps.length
       });
     } catch (err: any) {
       console.error('Gemini assistant error:', err);
-      res.status(500).json({
-        error: 'Ошибка AI консультанта',
-        details: err?.message
+      const fallbackIds = findMatchingProperties(message);
+      res.json({
+        reply: "Я нашел подходящие объекты в каталоге недвижимости по вашему запросу. Все они отмечены на интерактивной карте ниже:",
+        matchedPropertyIds: fallbackIds,
+        mapCenter: [41.311081, 69.240562],
+        mapZoom: 12
       });
     }
   });
