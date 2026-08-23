@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Search,
   SlidersHorizontal,
@@ -27,7 +27,6 @@ import {
   ChevronDown
 } from 'lucide-react';
 import { Property, FilterState, PropertyType, DealType, User, Review } from './types';
-import { INITIAL_PROPERTIES } from './data/mockProperties';
 import { MOCK_USERS } from './data/mockUsers';
 import { PropertyCard } from './components/PropertyCard';
 import { PropertyNearbyCard } from './components/PropertyNearbyCard';
@@ -44,6 +43,134 @@ import { AuthModal } from './components/AuthModal';
 import { AdminDashboard } from './components/AdminDashboard';
 import { BottomNav, NavTab } from './components/BottomNav';
 
+// ── Backend base URL ────────────────────────────────────────────────────
+// Read from .env (Vite: VITE_API_URL). Falls back to localhost:8000 for local dev.
+// Add to your .env file:  VITE_API_URL=http://localhost:8000
+const API_URL = (
+  (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_API_URL) ||
+  'http://localhost:8000'
+).replace(/\/+$/, '');
+
+function authHeaders(): Record<string, string> {
+  const token = typeof localStorage !== 'undefined' ? localStorage.getItem('access_token') : null;
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+// The backend may return numbers as strings, snake_case keys, a flat location, etc.
+// This normalizer is defensive: it accepts several reasonable shapes and always
+// returns a fully-populated Property so the UI (cards, detail page, map) never
+// has to special-case missing fields.
+function normalizeProperty(raw: any): Property {
+  const dealType = raw.deal_type ?? raw.dealType ?? 'rent';
+  const location = raw.location ?? {};
+  const specs = raw.specs ?? {};
+  const agent = raw.agent ?? raw.owner ?? {};
+
+  return {
+    id: String(raw.id),
+    title: raw.title ?? 'Без названия',
+    dealType,
+    propertyType: raw.property_type ?? raw.propertyType ?? 'apartment',
+    price: Number(raw.price ?? 0),
+    currency: raw.currency ?? '$',
+    pricePeriod: raw.price_period ?? raw.pricePeriod ?? (dealType === 'rent' ? '/ мес' : ''),
+    description: raw.description ?? '',
+    featured: Boolean(raw.featured),
+    location: {
+      address: location.address ?? raw.address ?? '',
+      neighborhood: location.neighborhood ?? raw.neighborhood ?? '',
+      city: location.city ?? raw.city ?? '',
+      country: location.country ?? raw.country ?? 'Узбекистан',
+      lat: Number(location.lat ?? raw.lat ?? raw.latitude ?? 41.311081),
+      lng: Number(location.lng ?? raw.lng ?? raw.longitude ?? 69.240562),
+    },
+    specs: {
+      bedrooms: Number(specs.bedrooms ?? raw.bedrooms ?? 0),
+      bathrooms: Number(specs.bathrooms ?? raw.bathrooms ?? 0),
+      areaSqFt: Number(specs.area_sq_ft ?? specs.areaSqFt ?? raw.area ?? 0),
+      builtYear: Number(specs.built_year ?? specs.builtYear ?? raw.built_year ?? new Date().getFullYear()),
+      livingRooms: Number(specs.living_rooms ?? specs.livingRooms ?? 1),
+      parkingSpaces: Number(specs.parking_spaces ?? specs.parkingSpaces ?? 0),
+    },
+    photos: Array.isArray(raw.photos) && raw.photos.length
+      ? raw.photos
+      : raw.photo_url
+        ? [raw.photo_url]
+        : ['https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1200&q=80'],
+    amenities: raw.amenities ?? [],
+    facilities: raw.facilities ?? [],
+    agent: {
+      id: String(agent.id ?? raw.owner_id ?? 'agent'),
+      name: agent.name ?? raw.owner_name ?? 'Собственник',
+      role: agent.role ?? 'Собственник',
+      phone: agent.phone ?? '+998 90 000-00-00',
+      email: agent.email ?? '',
+      avatar: agent.avatar ?? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80',
+      verified: Boolean(agent.verified ?? true),
+      rating: Number(agent.rating ?? raw.rating ?? 5),
+      dealsCount: Number(agent.deals_count ?? agent.dealsCount ?? 1),
+    },
+    rating: Number(raw.rating ?? 0),
+    reviewsCount: Number(raw.reviews_count ?? raw.reviewsCount ?? 0),
+    reviews: raw.reviews ?? [],
+    ownerId: raw.owner_id ?? raw.ownerId,
+    createdAt: raw.created_at ?? raw.createdAt ?? new Date().toISOString(),
+  } as Property;
+}
+
+// Accepts a plain array, or a paginated/wrapped envelope like
+// {results: []} / {items: []} / {properties: []} / {data: []}.
+function extractList(data: any): any[] {
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.results)) return data.results;
+  if (Array.isArray(data?.items)) return data.items;
+  if (Array.isArray(data?.properties)) return data.properties;
+  if (Array.isArray(data?.data)) return data.data;
+  return [];
+}
+
+// Simple GET {API_URL}/api/properties — no query params, no filters.
+async function fetchProperties(): Promise<Property[]> {
+  const url = `${API_URL}/api/properties`;
+  console.log('[App][fetchProperties] → GET', url);
+
+  let res: Response;
+  try {
+    res = await fetch(url, { headers: { ...authHeaders() } });
+  } catch (networkErr) {
+    console.error('[App][fetchProperties] ✗ network error', networkErr);
+    throw new Error(`Не удалось подключиться к серверу (${url}). Проверьте, что backend запущен на ${API_URL}.`);
+  }
+
+  if (!res.ok) {
+    console.error('[App][fetchProperties] ✗ HTTP', res.status, res.statusText);
+    throw new Error(`Сервер вернул ошибку при загрузке объектов (HTTP ${res.status}).`);
+  }
+
+  let data: any;
+  try {
+    data = await res.json();
+  } catch (parseErr) {
+    console.error('[App][fetchProperties] ✗ invalid JSON', parseErr);
+    throw new Error('Сервер вернул некорректный ответ (не JSON).');
+  }
+
+  console.log('[App][fetchProperties] ← raw response', data);
+  const list = extractList(data);
+  console.log('[App][fetchProperties] ← extracted', list.length, 'items, normalizing…');
+  const normalized: Property[] = [];
+  for (const raw of list) {
+    if (!raw || typeof raw !== 'object') continue;
+    try {
+      normalized.push(normalizeProperty(raw));
+    } catch (normErr) {
+      console.error('[App][fetchProperties] ✗ failed to normalize item, skipping:', raw, normErr);
+    }
+  }
+  console.log('[App][fetchProperties] ← normalized', normalized);
+  return normalized;
+}
+
 export default function App() {
   // Navigation Tab State
   const [activeTab, setActiveTab] = useState<NavTab>('home');
@@ -57,9 +184,10 @@ export default function App() {
     return MOCK_USERS[0]; // Admin by default
   });
 
-  // Properties State
-  const [properties, setProperties] = useState<Property[]>(INITIAL_PROPERTIES);
+  // Properties State — populated from the real backend (see loadProperties below).
+  const [properties, setProperties] = useState<Property[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [favorites, setFavorites] = useState<string[]>(() => {
     const saved = localStorage.getItem('uzestate_favorites');
     return saved ? JSON.parse(saved) : ['uz-prop-1', 'uz-prop-2'];
@@ -99,6 +227,32 @@ export default function App() {
     setTimeout(() => setToastMessage(null), 3500);
   };
 
+  // ── Real backend integration ────────────────────────────────────────────
+  // Plain GET {API_URL}/api/properties — no query params. All filtering
+  // (city, dealType, propertyType, bedrooms, price, search) happens
+  // client-side in filteredProperties below, once we actually have the data.
+  const loadProperties = useCallback(async (showErrorToast = false) => {
+    setIsLoading(true);
+    setLoadError(null);
+    try {
+      const data = await fetchProperties();
+      setProperties(data);
+    } catch (err: any) {
+      const message = err?.message || 'Не удалось загрузить объекты с сервера.';
+      console.error('[App] loadProperties failed:', err);
+      setLoadError(message);
+      if (showErrorToast) showToast(message);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  // Load once on mount. Filtering happens client-side (see filteredProperties).
+  useEffect(() => {
+    loadProperties();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Save favorites to localStorage
   useEffect(() => {
     localStorage.setItem('uzestate_favorites', JSON.stringify(favorites));
@@ -113,7 +267,8 @@ export default function App() {
     }
   }, [currentUser]);
 
-  // Filter properties client-side
+  // Filter properties client-side (free-text search + safety net on top of
+  // whatever the backend already filtered).
   const filteredProperties = useMemo(() => {
     return properties.filter((p) => {
       // City filter
@@ -614,6 +769,38 @@ export default function App() {
               )}
             </div>
 
+            {/* Backend error banner (list still renders whatever we have cached) */}
+            {loadError && (
+              <div className="bg-red-50 border border-red-200 rounded-2xl p-3.5 flex items-center justify-between gap-3 text-xs text-red-700">
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{loadError}</span>
+                </div>
+                <button
+                  onClick={() => loadProperties(true)}
+                  className="px-3 py-1.5 bg-red-700 hover:bg-red-800 text-white rounded-lg font-bold shrink-0 flex items-center gap-1.5 cursor-pointer"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+                  Повторить
+                </button>
+              </div>
+            )}
+
+            {/* Loading skeleton (first load, nothing to show yet) */}
+            {isLoading && properties.length === 0 && !loadError && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+                {Array.from({ length: 8 }).map((_, i) => (
+                  <div key={i} className="bg-white rounded-2xl border border-stone-200/80 overflow-hidden animate-pulse">
+                    <div className="w-full h-40 bg-stone-200" />
+                    <div className="p-3 space-y-2">
+                      <div className="h-3 bg-stone-200 rounded w-3/4" />
+                      <div className="h-3 bg-stone-200 rounded w-1/2" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
             {/* Section: Featured Properties */}
             {featuredProperties.length > 0 && !filters.searchQuery && (
               <section className="space-y-4">
@@ -673,36 +860,39 @@ export default function App() {
                     Найдено {filteredProperties.length} объявлений по заданным критериям
                   </p>
                 </div>
-                
-                {/* View on map quick link */}
-                <button
-                  onClick={() => setActiveTab('map')}
-                  className="px-3.5 py-1.5 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-800 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer border border-stone-200/80"
-                >
-                  <MapIcon className="w-3.5 h-3.5 text-stone-600" />
-                  <span>Открыть на карте</span>
-                </button>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  {/* Manual refresh from backend */}
+                  <button
+                    onClick={() => loadProperties(true)}
+                    disabled={isLoading}
+                    className="px-3 py-1.5 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-800 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer border border-stone-200/80 disabled:opacity-50"
+                    title="Обновить список из базы данных"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 text-stone-600 ${isLoading ? 'animate-spin' : ''}`} />
+                    <span className="hidden sm:inline">Обновить</span>
+                  </button>
+
+                  {/* View on map quick link */}
+                  <button
+                    onClick={() => setActiveTab('map')}
+                    className="px-3.5 py-1.5 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-800 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer border border-stone-200/80"
+                  >
+                    <MapIcon className="w-3.5 h-3.5 text-stone-600" />
+                    <span>Открыть на карте</span>
+                  </button>
+                </div>
               </div>
 
-              {filteredProperties.length === 0 ? (
+              {!isLoading && filteredProperties.length === 0 ? (
                 <div className="bg-white rounded-3xl p-12 text-center space-y-3 border border-stone-200 max-w-lg mx-auto">
                   <Search className="w-10 h-10 text-stone-300 mx-auto" />
                   <h4 className="font-bold text-base text-stone-800">Объекты не найдены</h4>
-                  <p className="text-xs text-stone-500">Попробуйте изменить параметры фильтров или поисковый запрос</p>
+                  <p className="text-xs text-stone-500">
+                    {loadError ? 'Не удалось получить данные с сервера.' : 'Попробуйте изменить параметры фильтров или поисковый запрос'}
+                  </p>
                   <button
-                    onClick={() =>
-                      setFilters({
-                        searchQuery: '',
-                        dealType: 'all',
-                        propertyType: 'all',
-                        minPrice: 0,
-                        maxPrice: 500000,
-                        bedrooms: 'all',
-                        bathrooms: 'all',
-                        city: 'all',
-                        sortBy: 'featured'
-                      })
-                    }
+                    onClick={handleResetFilters}
                     className="mt-2 px-5 py-2 bg-stone-900 hover:bg-stone-800 text-white rounded-xl text-xs font-bold transition-colors"
                   >
                     Сбросить фильтры
@@ -730,7 +920,8 @@ export default function App() {
         {activeTab === 'map' && (
           <main className="flex-1 w-full h-full relative overflow-hidden">
             
-            {/* 1. Full-Screen Interactive Map Canvas */}
+            {/* 1. Full-Screen Interactive Map Canvas — fed by the same real `filteredProperties`
+                 that come from the backend, so the map always mirrors the catalog. */}
             <InteractiveMap
               properties={filteredProperties}
               selectedProperty={selectedProperty}
@@ -790,6 +981,16 @@ export default function App() {
                         {activeFiltersCount}
                       </span>
                     )}
+                  </button>
+
+                  {/* Manual refresh, always available on the map too */}
+                  <button
+                    onClick={() => loadProperties(true)}
+                    disabled={isLoading}
+                    className="h-11 px-3.5 rounded-2xl bg-white/95 backdrop-blur-md hover:bg-white text-stone-800 border border-stone-200/90 flex items-center justify-center gap-1.5 shadow-xl shrink-0 transition-all active:scale-95 cursor-pointer font-bold text-xs disabled:opacity-50"
+                    title="Обновить объекты из базы данных"
+                  >
+                    <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
                   </button>
 
                   {/* Action Quick Button (Add Property for Realtors, AI Assistant for Seekers) */}
@@ -893,14 +1094,16 @@ export default function App() {
                 {filteredProperties.length === 0 ? (
                   <div className="pointer-events-auto bg-white/95 backdrop-blur-md p-4 rounded-2xl border border-stone-200 shadow-2xl flex items-center justify-between gap-3 max-w-sm mx-auto">
                     <div className="text-xs text-stone-700">
-                      <p className="font-bold">Нет объектов по фильтрам</p>
-                      <p className="text-[10px] text-stone-500">Попробуйте сбросить параметры</p>
+                      <p className="font-bold">{isLoading ? 'Загрузка объектов...' : 'Нет объектов по фильтрам'}</p>
+                      <p className="text-[10px] text-stone-500">
+                        {loadError ? loadError : 'Попробуйте сбросить параметры'}
+                      </p>
                     </div>
                     <button
-                      onClick={handleResetFilters}
+                      onClick={loadError ? () => loadProperties(true) : handleResetFilters}
                       className="px-3.5 py-1.5 bg-stone-900 text-white rounded-xl text-xs font-bold shrink-0 hover:bg-stone-800 transition-colors"
                     >
-                      Сбросить
+                      {loadError ? 'Повторить' : 'Сбросить'}
                     </button>
                   </div>
                 ) : (
@@ -1158,4 +1361,3 @@ export default function App() {
     </div>
   );
 }
-

@@ -122,7 +122,10 @@ export const PropertyDetailPage: React.FC<PropertyDetailPageProps> = ({
   };
 
   return (
-    <div className="min-h-screen bg-stone-100 text-stone-900 pb-28 sm:pb-20" id="property-detail-page">
+    <div
+      className="h-full min-h-0 overflow-y-auto overflow-x-hidden bg-stone-100 text-stone-900 pb-28 sm:pb-20"
+      id="property-detail-page"
+    >
       
       {/* Top Header & Breadcrumbs Bar */}
       <div className="bg-white border-b border-stone-200/90 sticky top-0 z-30 shadow-2xs">

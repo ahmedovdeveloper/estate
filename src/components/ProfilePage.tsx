@@ -31,6 +31,45 @@ interface ProfilePageProps {
   onNavigateHome: () => void;
 }
 
+// API_URL is injected at build/runtime (see .env / vite define). Falls back to local backend for dev.
+// Guarded because `process` doesn't exist in the browser unless the bundler replaces it.
+const getApiUrl = (): string => {
+  try {
+    // @ts-ignore - process may be replaced at build time by the bundler (e.g. Vite `define`)
+    if (typeof process !== 'undefined' && process.env && process.env.API_URL) {
+      // @ts-ignore
+      return process.env.API_URL;
+    }
+  } catch {
+    // process is not defined in this environment, fall through
+  }
+  // @ts-ignore - Vite-style env var as a fallback
+  if (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_API_URL) {
+    return (import.meta as any).env.VITE_API_URL;
+  }
+  return 'http://localhost:8000';
+};
+
+const API_URL = getApiUrl().replace(/\/+$/, '');
+console.log('[ProfilePage] Resolved API_URL:', API_URL);
+
+// Backend returns snake_case fields (agency_name, created_at) inside `user`.
+// Normalize to whatever camelCase shape the frontend User type expects.
+function normalizeUser(rawUser: any): User {
+  return {
+    ...rawUser,
+    id: rawUser.id,
+    username: rawUser.username,
+    name: rawUser.name,
+    email: rawUser.email,
+    phone: rawUser.phone,
+    role: rawUser.role,
+    agencyName: rawUser.agency_name ?? rawUser.agencyName ?? null,
+    createdAt: rawUser.created_at ?? rawUser.createdAt,
+    savedPropertyIds: rawUser.savedPropertyIds ?? [],
+  } as User;
+}
+
 export const ProfilePage: React.FC<ProfilePageProps> = ({
   currentUser,
   onLoginSuccess,
@@ -47,9 +86,9 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
 }) => {
   // Auth Form State (When not logged in)
   const [authTab, setAuthTab] = useState<'login' | 'register'>('login');
-  const [loginUsername, setLoginUsername] = useState('');
+  const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
-  
+
   const [regUsername, setRegUsername] = useState('');
   const [regPassword, setRegPassword] = useState('');
   const [regName, setRegName] = useState('');
@@ -61,48 +100,59 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleDirectLogin = async (username: string, pass: string) => {
+  const handleLoginSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
     setError(null);
     setLoading(true);
 
+    const url = `${API_URL}/api/auth/login`;
+    const payload = { email: loginEmail, password: loginPassword };
+
+    console.log('[ProfilePage][login] → Request', { url, method: 'POST', payload });
+
     try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password: pass })
-      });
-
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || 'Ошибка авторизации');
+      let res: Response;
+      try {
+        res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+      } catch (networkErr: any) {
+        console.error('[ProfilePage][login] ✗ Network/fetch error (backend unreachable, CORS, or bad URL):', networkErr);
+        throw new Error(
+          `Не удалось подключиться к серверу (${url}). Проверьте, что backend запущен и доступен, а также настройки CORS.`
+        );
       }
 
-      onLoginSuccess(data.user);
+      console.log('[ProfilePage][login] ← Response status:', res.status, res.statusText);
+
+      let data: any = null;
+      try {
+        data = await res.json();
+      } catch (parseErr) {
+        console.error('[ProfilePage][login] ✗ Response is not valid JSON:', parseErr);
+        throw new Error('Сервер вернул некорректный ответ (не JSON).');
+      }
+
+      console.log('[ProfilePage][login] ← Response body:', data);
+
+      if (!res.ok) {
+        throw new Error(data.detail || data.error || `Ошибка авторизации (HTTP ${res.status})`);
+      }
+
+      if (!data.user || !data.access_token) {
+        throw new Error('Сервер вернул неожиданный формат ответа (нет user/access_token).');
+      }
+
+      localStorage.setItem('access_token', data.access_token);
+      onLoginSuccess(normalizeUser(data.user));
     } catch (err: any) {
-      if (username.trim().toLowerCase() === 'admin' && pass.trim() === 'admin') {
-        const adminUser: User = {
-          id: 'user-admin',
-          username: 'admin',
-          name: 'Главный Администратор',
-          email: 'admin@uzestate.uz',
-          phone: '+998 71 200-00-00',
-          role: 'admin',
-          avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80',
-          createdAt: new Date().toISOString(),
-          savedPropertyIds: []
-        };
-        onLoginSuccess(adminUser);
-        return;
-      }
+      console.error('[ProfilePage][login] ✗ Final error:', err);
       setError(err.message || 'Не удалось войти в систему');
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleLoginSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    await handleDirectLogin(loginUsername, loginPassword);
   };
 
   const handleRegisterSubmit = async (e: React.FormEvent) => {
@@ -110,28 +160,58 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
     setError(null);
     setLoading(true);
 
-    try {
-      const res = await fetch('/api/auth/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          username: regUsername,
-          password: regPassword,
-          name: regName,
-          email: regEmail,
-          phone: regPhone,
-          role: regRole,
-          agencyName: regRole === 'owner' ? regAgency : undefined
-        })
-      });
+    const url = `${API_URL}/api/auth/register`;
+    const payload = {
+      username: regUsername,
+      password: regPassword,
+      name: regName,
+      email: regEmail,
+      phone: regPhone,
+      role: regRole,
+      agency_name: regRole === 'owner' ? regAgency : undefined
+    };
 
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || 'Ошибка регистрации');
+    console.log('[ProfilePage][register] → Request', { url, method: 'POST', payload });
+
+    try {
+      let res: Response;
+      try {
+        res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+      } catch (networkErr: any) {
+        console.error('[ProfilePage][register] ✗ Network/fetch error (backend unreachable, CORS, or bad URL):', networkErr);
+        throw new Error(
+          `Не удалось подключиться к серверу (${url}). Проверьте, что backend запущен и доступен, а также настройки CORS.`
+        );
       }
 
-      onLoginSuccess(data.user);
+      console.log('[ProfilePage][register] ← Response status:', res.status, res.statusText);
+
+      let data: any = null;
+      try {
+        data = await res.json();
+      } catch (parseErr) {
+        console.error('[ProfilePage][register] ✗ Response is not valid JSON:', parseErr);
+        throw new Error('Сервер вернул некорректный ответ (не JSON).');
+      }
+
+      console.log('[ProfilePage][register] ← Response body:', data);
+
+      if (!res.ok) {
+        throw new Error(data.detail || data.error || `Ошибка регистрации (HTTP ${res.status})`);
+      }
+
+      if (!data.user || !data.access_token) {
+        throw new Error('Сервер вернул неожиданный формат ответа (нет user/access_token).');
+      }
+
+      localStorage.setItem('access_token', data.access_token);
+      onLoginSuccess(normalizeUser(data.user));
     } catch (err: any) {
+      console.error('[ProfilePage][register] ✗ Final error:', err);
       setError(err.message || 'Не удалось зарегистрироваться');
     } finally {
       setLoading(false);
@@ -151,11 +231,6 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
             <div className="relative z-10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-5">
               <div className="flex items-center gap-4 sm:gap-6">
                 <div className="relative">
-                  <img
-                    src={currentUser.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=300&q=80'}
-                    alt={currentUser.name}
-                    className="w-20 h-20 sm:w-24 sm:h-24 rounded-3xl object-cover border-2 border-stone-200 shadow-md ring-4 ring-white"
-                  />
                   <span className="absolute -bottom-1 -right-1 w-6 h-6 bg-emerald-500 rounded-full border-2 border-white flex items-center justify-center text-white" title="Онлайн">
                     <CheckCircle2 className="w-4 h-4" />
                   </span>
@@ -422,13 +497,13 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
           {authTab === 'login' ? (
             <form onSubmit={handleLoginSubmit} className="space-y-3.5">
               <div className="space-y-1">
-                <label className="text-xs font-bold text-stone-700">Логин / Телефон</label>
+                <label className="text-xs font-bold text-stone-700">Email</label>
                 <input
-                  type="text"
+                  type="email"
                   required
-                  placeholder="admin или ваш логин"
-                  value={loginUsername}
-                  onChange={(e) => setLoginUsername(e.target.value)}
+                  placeholder="user@example.com"
+                  value={loginEmail}
+                  onChange={(e) => setLoginEmail(e.target.value)}
                   className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-stone-200 focus:outline-none focus:border-stone-900"
                 />
               </div>

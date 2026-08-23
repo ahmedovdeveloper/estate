@@ -8,17 +8,57 @@ interface AuthModalProps {
   onLoginSuccess: (user: User) => void;
 }
 
+// API_URL is injected at build/runtime (see .env / vite define). Falls back to local backend for dev.
+// Guarded because `process` doesn't exist in the browser unless the bundler replaces it.
+const getApiUrl = (): string => {
+  try {
+    // @ts-ignore - process may be replaced at build time by the bundler (e.g. Vite `define`)
+    if (typeof process !== 'undefined' && process.env && process.env.API_URL) {
+      // @ts-ignore
+      return process.env.API_URL;
+    }
+  } catch {
+    // process is not defined in this environment, fall through
+  }
+  // @ts-ignore - Vite-style env var as a fallback
+  if (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_API_URL) {
+    return (import.meta as any).env.VITE_API_URL;
+  }
+  return 'http://127.0.0.1:8000/';
+};
+
+const API_URL = getApiUrl().replace(/\/+$/, '');
+console.log('[AuthModal] Resolved API_URL:', API_URL);
+
+// Backend returns snake_case fields (agency_name, created_at) inside `user`.
+// Normalize to whatever camelCase shape the frontend User type expects,
+// while keeping the original fields too in case something else reads them directly.
+function normalizeUser(rawUser: any): User {
+  return {
+    ...rawUser,
+    id: rawUser.id,
+    username: rawUser.username,
+    name: rawUser.name,
+    email: rawUser.email,
+    phone: rawUser.phone,
+    role: rawUser.role,
+    agencyName: rawUser.agency_name ?? rawUser.agencyName ?? null,
+    createdAt: rawUser.created_at ?? rawUser.createdAt,
+    savedPropertyIds: rawUser.savedPropertyIds ?? [],
+  } as User;
+}
+
 export const AuthModal: React.FC<AuthModalProps> = ({
   isOpen,
   onClose,
   onLoginSuccess
 }) => {
   const [tab, setTab] = useState<'login' | 'register'>('login');
-  
+
   // Login form state
-  const [loginUsername, setLoginUsername] = useState('');
+  const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
-  
+
   // Register form state
   const [regUsername, setRegUsername] = useState('');
   const [regPassword, setRegPassword] = useState('');
@@ -33,51 +73,62 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleDirectLogin = async (username: string, password: string) => {
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
     setError(null);
     setLoading(true);
 
-    try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password })
-      });
+    const url = `${API_URL}/api/auth/login`;
+    const payload = { email: loginEmail, password: loginPassword };
 
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || 'Ошибка авторизации');
+    console.log('[AuthModal][login] → Request', { url, method: 'POST', payload });
+
+    try {
+      let res: Response;
+      try {
+        res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+      } catch (networkErr: any) {
+        // fetch itself threw: server unreachable, wrong URL, CORS block, no network, etc.
+        console.error('[AuthModal][login] ✗ Network/fetch error (backend unreachable, CORS, or bad URL):', networkErr);
+        throw new Error(
+          `Не удалось подключиться к серверу (${url}). Проверьте, что backend запущен и доступен, а также настройки CORS.`
+        );
       }
 
-      onLoginSuccess(data.user);
+      console.log('[AuthModal][login] ← Response status:', res.status, res.statusText);
+
+      let data: any = null;
+      try {
+        data = await res.json();
+      } catch (parseErr) {
+        console.error('[AuthModal][login] ✗ Response is not valid JSON:', parseErr);
+        throw new Error('Сервер вернул некорректный ответ (не JSON).');
+      }
+
+      console.log('[AuthModal][login] ← Response body:', data);
+
+      if (!res.ok) {
+        throw new Error(data.detail || data.error || `Ошибка авторизации (HTTP ${res.status})`);
+      }
+
+      // Real backend contract: { access_token, token_type, user }
+      if (!data.user || !data.access_token) {
+        throw new Error('Сервер вернул неожиданный формат ответа (нет user/access_token).');
+      }
+
+      localStorage.setItem('access_token', data.access_token);
+      onLoginSuccess(normalizeUser(data.user));
       onClose();
     } catch (err: any) {
-      // Local fallback for admin or mock users if server is unresponsive
-      if (username.trim().toLowerCase() === 'admin' && password.trim() === 'admin') {
-        const adminUser: User = {
-          id: 'user-admin',
-          username: 'admin',
-          name: 'Главный Администратор',
-          email: 'admin@uzestate.uz',
-          phone: '+998 71 200-00-00',
-          role: 'admin',
-          avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80',
-          createdAt: new Date().toISOString(),
-          savedPropertyIds: []
-        };
-        onLoginSuccess(adminUser);
-        onClose();
-        return;
-      }
+      console.error('[AuthModal][login] ✗ Final error:', err);
       setError(err.message || 'Не удалось войти в систему');
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    await handleDirectLogin(loginUsername, loginPassword);
   };
 
   const handleRegister = async (e: React.FormEvent) => {
@@ -85,29 +136,60 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setError(null);
     setLoading(true);
 
-    try {
-      const res = await fetch('/api/auth/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          username: regUsername,
-          password: regPassword,
-          name: regName,
-          email: regEmail,
-          phone: regPhone,
-          role: regRole,
-          agencyName: regRole === 'owner' ? regAgency : undefined
-        })
-      });
+    const url = `${API_URL}/api/auth/register`;
+    const payload = {
+      username: regUsername,
+      email: regEmail,
+      password: regPassword,
+      name: regName,
+      phone: regPhone,
+      role: regRole,
+      agency_name: regRole === 'owner' ? regAgency : undefined
+    };
 
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || 'Ошибка регистрации');
+    console.log('[AuthModal][register] → Request', { url, method: 'POST', payload });
+
+    try {
+      let res: Response;
+      try {
+        res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+      } catch (networkErr: any) {
+        console.error('[AuthModal][register] ✗ Network/fetch error (backend unreachable, CORS, or bad URL):', networkErr);
+        throw new Error(
+          `Не удалось подключиться к серверу (${url}). Проверьте, что backend запущен и доступен, а также настройки CORS.`
+        );
       }
 
-      onLoginSuccess(data.user);
+      console.log('[AuthModal][register] ← Response status:', res.status, res.statusText);
+
+      let data: any = null;
+      try {
+        data = await res.json();
+      } catch (parseErr) {
+        console.error('[AuthModal][register] ✗ Response is not valid JSON:', parseErr);
+        throw new Error('Сервер вернул некорректный ответ (не JSON).');
+      }
+
+      console.log('[AuthModal][register] ← Response body:', data);
+
+      if (!res.ok) {
+        throw new Error(data.detail || data.error || `Ошибка регистрации (HTTP ${res.status})`);
+      }
+
+      // Real backend contract: { access_token, token_type, user }
+      if (!data.user || !data.access_token) {
+        throw new Error('Сервер вернул неожиданный формат ответа (нет user/access_token).');
+      }
+
+      localStorage.setItem('access_token', data.access_token);
+      onLoginSuccess(normalizeUser(data.user));
       onClose();
     } catch (err: any) {
+      console.error('[AuthModal][register] ✗ Final error:', err);
       setError(err.message || 'Не удалось зарегистрироваться');
     } finally {
       setLoading(false);
@@ -117,7 +199,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in" id="auth-modal-overlay">
       <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-stone-200 overflow-hidden flex flex-col max-h-[90vh]" id="auth-modal-content">
-        
+
         {/* Header */}
         <div className="p-6 border-b border-stone-100 flex items-center justify-between bg-stone-50/80">
           <div>
@@ -177,15 +259,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             <form onSubmit={handleLogin} className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-stone-700 mb-1.5">
-                  Имя пользователя (Логин)
+                  Email
                 </label>
                 <input
-                  type="text"
-                  id="login-username-input"
+                  type="email"
+                  id="login-email-input"
                   required
-                  placeholder="admin или ваш логин"
-                  value={loginUsername}
-                  onChange={(e) => setLoginUsername(e.target.value)}
+                  placeholder="user@example.com"
+                  value={loginEmail}
+                  onChange={(e) => setLoginEmail(e.target.value)}
                   className="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-stone-900 focus:bg-white transition-all"
                 />
               </div>
@@ -326,11 +408,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
                 <div>
                   <label className="block text-xs font-semibold text-stone-700 mb-1">
-                    Email
+                    Email *
                   </label>
                   <input
                     type="email"
                     id="reg-email-input"
+                    required
                     placeholder="user@uzestate.uz"
                     value={regEmail}
                     onChange={(e) => setRegEmail(e.target.value)}

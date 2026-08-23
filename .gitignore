@@ -1,8 +1,26 @@
+# Node.js
 node_modules/
 build/
 dist/
 coverage/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+venv/
+.venv/
+
+# Backend-specific cache
+backend-esstate/__pycache__/
+
+# macOS
 .DS_Store
+
+# Logs
 *.log
+
+# Environment variables
 .env*
 !.env.example

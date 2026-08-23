@@ -9,6 +9,34 @@ interface AddPropertyModalProps {
   onSubmitProperty: (propertyData: Partial<Property>, isEditMode?: boolean, editId?: string) => Promise<void>;
   editProperty?: Property | null;
   currentUser?: User | null;
+  // Called after a successful DELETE against the real backend, so the parent
+  // can remove the property from its local list/state.
+  onPropertyDeleted?: (id: string) => void;
+}
+
+// API_URL is injected at build/runtime (see .env / vite define). Falls back to local backend for dev.
+const getApiUrl = (): string => {
+  try {
+    // @ts-ignore
+    if (typeof process !== 'undefined' && process.env && process.env.API_URL) {
+      // @ts-ignore
+      return process.env.API_URL;
+    }
+  } catch {
+    // process is not defined in this environment, fall through
+  }
+  // @ts-ignore
+  if (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_API_URL) {
+    return (import.meta as any).env.VITE_API_URL;
+  }
+  return 'http://localhost:8000';
+};
+
+const API_URL = getApiUrl().replace(/\/+$/, '');
+
+function authHeaders(): Record<string, string> {
+  const token = localStorage.getItem('access_token');
+  return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
 export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
@@ -16,7 +44,8 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
   onClose,
   onSubmitProperty,
   editProperty = null,
-  currentUser = null
+  currentUser = null,
+  onPropertyDeleted
 }) => {
   const isEdit = Boolean(editProperty);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -56,6 +85,8 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
   const [agentName, setAgentName] = useState(currentUser?.name || 'Сардор Рахимов');
   const [agentPhone, setAgentPhone] = useState(currentUser?.phone || '+998 90 123-45-67');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   useEffect(() => {
     if (editProperty) {
@@ -91,6 +122,7 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
         setAgentPhone(currentUser.phone || '+998 90 123-45-67');
       }
     }
+    setSubmitError(null);
   }, [editProperty, isOpen, currentUser]);
 
   if (!isOpen) return null;
@@ -171,64 +203,186 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
     }
   };
 
+  // Builds the payload in the EXACT shape the backend expects
+  // (snake_case specs, plus facilities/featured/status).
+  const buildBackendPayload = () => ({
+    title: title.trim(),
+    description:
+      description.trim() ||
+      'Комфортный и благоустроенный объект недвижимости с отличной локацией и развитой инфраструктурой.',
+    price: Number(price),
+    pricePeriod: dealType === 'rent' ? '/ мес' : '',
+    currency,
+    dealType,
+    propertyType,
+    location: {
+      address,
+      neighborhood,
+      city,
+      country: 'Узбекистан',
+      lat,
+      lng
+    },
+    specs: {
+      bedrooms,
+      bathrooms,
+      area_sq_m: areaSqFt,
+      built_year: builtYear,
+      living_rooms: livingRooms,
+      parking_spaces: parkingSpaces,
+      floor,
+      total_floors: totalFloors
+    },
+    photos: photosList.length > 0 ? photosList : presetPhotos.slice(0, 2),
+    amenities: selectedAmenities,
+    facilities: [],
+    featured: false,
+    status: 'published'
+  });
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim() || !price) return;
 
+    setSubmitError(null);
     setIsSubmitting(true);
+
     try {
-      await onSubmitProperty(
-        {
-          title: title.trim(),
-          dealType,
-          propertyType,
-          price: Number(price),
-          currency,
-          pricePeriod: dealType === 'rent' ? '/ мес' : '',
-          description:
-            description.trim() ||
-            'Комфортный и благоустроенный объект недвижимости с отличной локацией и развитой инфраструктурой.',
-          location: {
-            address,
-            neighborhood,
-            city,
-            country: 'Узбекистан',
-            lat,
-            lng
+      if (isEdit && editProperty) {
+        // No confirmed update endpoint from backend yet — delegate to parent's
+        // existing handler so nothing regresses. Ask to wire a real PUT/PATCH
+        // once that endpoint exists.
+        await onSubmitProperty(
+          {
+            title: title.trim(),
+            dealType,
+            propertyType,
+            price: Number(price),
+            currency,
+            pricePeriod: dealType === 'rent' ? '/ мес' : '',
+            description: description.trim(),
+            location: { address, neighborhood, city, country: 'Узбекистан', lat, lng },
+            specs: { bedrooms, bathrooms, areaSqFt, builtYear, livingRooms, parkingSpaces, floor, totalFloors },
+            amenities: selectedAmenities,
+            photos: photosList.length > 0 ? photosList : presetPhotos.slice(0, 2),
+            agent: {
+              id: editProperty?.agent?.id || `agent-${Date.now()}`,
+              name: agentName,
+              role: currentUser?.role === 'admin' ? 'Администратор портала' : 'Собственник / Риелтор',
+              phone: agentPhone,
+              email: currentUser?.email || 'contact@uzestate.uz',
+              avatar: currentUser?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80',
+              verified: true,
+              rating: 5.0,
+              dealsCount: 15
+            },
+            ownerId: currentUser?.id || 'user-admin'
           },
-          specs: {
-            bedrooms,
-            bathrooms,
-            areaSqFt,
-            builtYear,
-            livingRooms,
-            parkingSpaces,
-            floor,
-            totalFloors
+          true,
+          editProperty.id
+        );
+        onClose();
+        return;
+      }
+
+      // CREATE — real POST to the backend
+      const url = `${API_URL}/api/properties`;
+      const payload = buildBackendPayload();
+
+      console.log('[AddPropertyModal][create] → Request', { url, method: 'POST', payload });
+
+      let res: Response;
+      try {
+        res = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...authHeaders()
           },
-          amenities: selectedAmenities,
-          photos: photosList.length > 0 ? photosList : presetPhotos.slice(0, 2),
-          agent: {
-            id: editProperty?.agent?.id || `agent-${Date.now()}`,
-            name: agentName,
-            role: currentUser?.role === 'admin' ? 'Администратор портала' : 'Собственник / Риелтор',
-            phone: agentPhone,
-            email: currentUser?.email || 'contact@uzestate.uz',
-            avatar: currentUser?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80',
-            verified: true,
-            rating: 5.0,
-            dealsCount: 15
-          },
-          ownerId: currentUser?.id || 'user-admin'
-        },
-        isEdit,
-        editProperty?.id
-      );
+          body: JSON.stringify(payload)
+        });
+      } catch (networkErr: any) {
+        console.error('[AddPropertyModal][create] ✗ Network error:', networkErr);
+        throw new Error(`Не удалось подключиться к серверу (${url}). Проверьте, что backend запущен.`);
+      }
+
+      console.log('[AddPropertyModal][create] ← Response status:', res.status, res.statusText);
+
+      let data: any = null;
+      try {
+        data = await res.json();
+      } catch {
+        // No JSON body — fine for some 2xx/204 responses
+      }
+
+      console.log('[AddPropertyModal][create] ← Response body:', data);
+
+      if (!res.ok) {
+        const msg = data?.detail || data?.error || `Ошибка создания объявления (HTTP ${res.status})`;
+        throw new Error(typeof msg === 'string' ? msg : JSON.stringify(msg));
+      }
+
+      // Let parent know too, in case it keeps its own local list in sync via
+      // this same callback (e.g. pushing `data` into state). Parent can choose
+      // to ignore the fetch it would normally do, since we already created it.
+      try {
+        await onSubmitProperty(data ?? payload, false, undefined);
+      } catch (parentErr) {
+        console.warn('[AddPropertyModal][create] parent onSubmitProperty handler failed (property was still created on backend):', parentErr);
+      }
+
       onClose();
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      console.error('[AddPropertyModal] ✗ Final error:', err);
+      setSubmitError(err.message || 'Не удалось сохранить объявление');
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!editProperty) return;
+    const confirmed = window.confirm('Удалить это объявление без возможности восстановления?');
+    if (!confirmed) return;
+
+    setSubmitError(null);
+    setIsDeleting(true);
+
+    const url = `${API_URL}/api/properties/${editProperty.id}`;
+    console.log('[AddPropertyModal][delete] → Request', { url, method: 'DELETE' });
+
+    try {
+      let res: Response;
+      try {
+        res = await fetch(url, {
+          method: 'DELETE',
+          headers: { ...authHeaders() }
+        });
+      } catch (networkErr: any) {
+        console.error('[AddPropertyModal][delete] ✗ Network error:', networkErr);
+        throw new Error(`Не удалось подключиться к серверу (${url}).`);
+      }
+
+      console.log('[AddPropertyModal][delete] ← Response status:', res.status, res.statusText);
+
+      if (!res.ok && res.status !== 204) {
+        let data: any = null;
+        try {
+          data = await res.json();
+        } catch {
+          // ignore
+        }
+        const msg = data?.detail || data?.error || `Ошибка удаления (HTTP ${res.status})`;
+        throw new Error(typeof msg === 'string' ? msg : JSON.stringify(msg));
+      }
+
+      onPropertyDeleted?.(editProperty.id);
+      onClose();
+    } catch (err: any) {
+      console.error('[AddPropertyModal][delete] ✗ Final error:', err);
+      setSubmitError(err.message || 'Не удалось удалить объявление');
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -253,18 +407,38 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
               {isEdit ? 'Изменение характеристик, цены и локации на карте' : 'Добавьте дом, квартиру, виллу или офис на карту Узбекистана'}
             </p>
           </div>
-          <button
-            id="close-add-modal-btn"
-            onClick={onClose}
-            className="w-9 h-9 rounded-full bg-stone-100 hover:bg-stone-200 text-stone-700 flex items-center justify-center transition-colors cursor-pointer"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            {isEdit && (
+              <button
+                type="button"
+                id="delete-property-btn"
+                onClick={handleDelete}
+                disabled={isDeleting}
+                className="w-9 h-9 rounded-full bg-red-50 hover:bg-red-100 text-red-600 flex items-center justify-center transition-colors cursor-pointer disabled:opacity-50"
+                title="Удалить объявление"
+              >
+                <Trash2 className="w-4.5 h-4.5" />
+              </button>
+            )}
+            <button
+              id="close-add-modal-btn"
+              onClick={onClose}
+              className="w-9 h-9 rounded-full bg-stone-100 hover:bg-stone-200 text-stone-700 flex items-center justify-center transition-colors cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Form Body */}
         <form onSubmit={handleSubmit} className="overflow-y-auto flex-1 p-5 sm:p-6 space-y-6">
-          
+
+          {submitError && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700">
+              {submitError}
+            </div>
+          )}
+
           {/* Deal Type & Property Category */}
           <div className="space-y-4">
             <div>

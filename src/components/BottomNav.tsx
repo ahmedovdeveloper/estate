@@ -185,24 +185,13 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           id="nav-tab-profile"
         >
           <div className="relative">
-            {currentUser ? (
-              <img
-                src={
-                  currentUser.avatar ||
-                  'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80'
-                }
-                alt={currentUser.name}
-                className="w-[20px] h-[20px] rounded-full object-cover ring-1 ring-stone-300"
-              />
-            ) : (
-              <UserIcon
-                className={`w-[20px] h-[20px] transition-transform ${
-                  activeTab === 'profile'
-                    ? 'stroke-[2.3] scale-105 text-[#007AFF]'
-                    : 'stroke-[1.8] text-stone-600'
-                }`}
-              />
-            )}
+            <UserIcon
+              className={`w-[20px] h-[20px] transition-transform ${
+                activeTab === 'profile'
+                  ? 'stroke-[2.3] scale-105 text-[#007AFF]'
+                  : 'stroke-[1.8] text-stone-600'
+              }`}
+            />
             {currentUser?.role === 'admin' && (
               <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-amber-400 rounded-full border border-white flex items-center justify-center text-[6px] text-stone-950 font-black">
                 ★
